@@ -1,6 +1,5 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { checkSupabaseConnection } from './lib/supabase';
 import LoginForm from './components/Auth/LoginForm';
 import Header from './components/Layout/Header';
 import Sidebar from './components/Layout/Sidebar';
@@ -24,38 +23,13 @@ const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = React.useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
-  const [connectionChecked, setConnectionChecked] = React.useState(false);
-
-  // Vérifier la connexion Supabase au démarrage
-  React.useEffect(() => {
-    const testConnection = async () => {
-      console.log('🚀 Démarrage de l\'application GestionLoc Pro');
-      
-      try {
-        const result = await checkSupabaseConnection();
-        if (result.connected) {
-          console.log('✅ Application prête - Connexion Supabase active');
-        } else {
-          console.error('❌ Erreur de connexion Supabase:', result.error);
-          console.log('💡 Vérifiez votre configuration dans le fichier .env');
-        }
-      } catch (error) {
-        console.error('⚠️ Erreur lors du test de connexion:', error);
-      }
-      
-      setConnectionChecked(true);
-    };
-    testConnection();
-  }, []);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">
-            {connectionChecked ? 'Chargement...' : 'Initialisation...'}
-          </p>
+          <p className="text-gray-600">Chargement...</p>
         </div>
       </div>
     );
@@ -68,19 +42,19 @@ const AppContent: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return user.role === 'owner' ? <OwnerDashboard /> : <PropertySearch />;
+        return user.role === 'owner' ? <OwnerDashboard onTabChange={setActiveTab} /> : <PropertySearch />;
       case 'properties':
-        return <PropertiesTab />;
+        return <PropertiesTab onTabChange={setActiveTab} />;
       case 'tenants':
-        return <TenantsTab />;
+        return <TenantsTab onTabChange={setActiveTab} />;
       case 'payments':
-        return <PaymentsTab />;
+        return <PaymentsTab onTabChange={setActiveTab} />;
       case 'expenses':
-        return <ExpensesTab />;
+        return <ExpensesTab onTabChange={setActiveTab} />;
       case 'issues':
-        return <IssuesTab />;
+        return <IssuesTab onTabChange={setActiveTab} />;
       case 'reports':
-        return <ReportsTab />;
+        return <ReportsTab onTabChange={setActiveTab} />;
       case 'ai-agents':
         return <AIAgentsTab />;
       case 'settings':
@@ -90,7 +64,7 @@ const AppContent: React.FC = () => {
       case 'search':
         return <PropertySearch />;
       case 'my-rental':
-        return <MyRentalTab />;
+        return <MyRentalTab onTabChange={setActiveTab} />;
       case 'history':
         return <TenantHistoryTab />;
       case 'property-requests':
@@ -98,7 +72,7 @@ const AppContent: React.FC = () => {
       case 'visit-requests':
         return <VisitRequestsTab />;
       default:
-        return user.role === 'owner' ? <OwnerDashboard /> : <PropertySearch />;
+        return user.role === 'owner' ? <OwnerDashboard onTabChange={setActiveTab} /> : <PropertySearch />;
     }
   };
 

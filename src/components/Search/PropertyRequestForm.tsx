@@ -1,29 +1,28 @@
 import React, { useState } from 'react';
 import { X, Upload, User, Mail, Phone, FileText, MessageSquare } from 'lucide-react';
-import { Property, Unit, PropertyRequest, Tenant } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { usePropertyRequests } from '../../hooks/usePropertyRequests';
+import { useVisitRequests } from '../../hooks/useVisitRequests';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNotifications } from '../../hooks/useNotifications';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
+import { supabase } from '../../lib/supabase';
 
 interface PropertyRequestFormProps {
-  property: Property;
-  unit?: Unit | null;
+  property: any;
+  unit?: any | null;
   onClose: () => void;
 }
 
 const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, unit, onClose }) => {
   const { user } = useAuth();
-  const [requests, setRequests] = useLocalStorage<PropertyRequest[]>('gestionloc_requests', []);
-  const [visitRequests] = useLocalStorage('gestionloc_visit_requests', []);
-  const [properties, setProperties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units, setUnits] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const { addNotification } = useNotifications(property.ownerId);
-  const { addHistoryEntry } = useTenantHistory();
+  const { addRequest } = usePropertyRequests();
+  const { visitRequests } = useVisitRequests();
+  const { updateProperty } = useProperties();
+  const { updateUnit } = useUnits();
   
   const [formData, setFormData] = useState({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
+    firstName: user?.first_name || '',
+    lastName: user?.last_name || '',
     email: user?.email || '',
     phone: user?.phone || '',
     message: '',
@@ -31,79 +30,73 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
     communicationPreference: user?.preferences?.aiCommunication || 'email' as 'email' | 'sms',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
-      alert('Veuillez remplir tous les champs obligatoires.');
-      return;
-    }
-    
-    // Find the visit request that enabled this property request
-    const enabledByVisit = visitRequests.find(vr => 
-      vr.tenantId === user?.id &&
-      vr.propertyId === property.id &&
-      (unit ? vr.unitId === unit.id : !vr.unitId) &&
-      (vr.status === 'confirmed' || vr.status === 'completed')
-    );
-    
-    const newRequest: PropertyRequest = {
-      id: Date.now().toString(),
-      propertyId: unit ? undefined : property.id,
-      unitId: unit?.id,
-      tenantId: user?.id || '',
-      status: 'en_attente',
-      requestDate: new Date(),
-      visitRequestId: enabledByVisit?.id,
-      tenantInfo: {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        message: formData.message,
-        idDocument: formData.idDocument ? URL.createObjectURL(formData.idDocument) : undefined,
-        communicationPreference: formData.communicationPreference,
-      },
-    };
-
-    // Add request
-    setRequests(prev => [...prev, newRequest]);
-
-    // Update property/unit status
-    if (unit) {
-      setUnits(prev => prev.map(u => 
-        u.id === unit.id ? { ...u, status: 'en_attente_validation' } : u
-      ));
-    } else {
-      setProperties(prev => prev.map(p => 
-        p.id === property.id ? { ...p, status: 'en_attente_validation' } : p
-      ));
-    }
-
-    // Send notification to owner
-    addNotification({
-      userId: property.ownerId,
-      type: 'general',
-      title: 'Nouvelle demande de logement',
-      message: `${formData.firstName} ${formData.lastName} souhaite ${unit ? `rejoindre la chambre ${unit.name}` : 'louer votre logement'} - ${property.name}`,
-      read: false,
-    });
-
-    // Add to tenant history
-    addHistoryEntry({
-      type: 'property_request',
-      title: `Demande de logement - ${property.name}`,
-      description: `Demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'}`,
-      propertyId: property.id,
-      unitId: unit?.id,
-      relatedId: newRequest.id,
-      metadata: {
-        status: 'pending'
+    try {
+      if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
+        alert('Veuillez remplir tous les champs obligatoires.');
+        return;
       }
-    });
+      
+      // Find the visit request that enabled this property request
+      const enabledByVisit = visitRequests.find(vr => 
+        vr.tenant_id === user?.id &&
+        vr.property_id === property.id &&
+        (unit ? vr.unit_id === unit.id : !vr.unit_id) &&
+        (vr.status === 'confirmed' || vr.status === 'completed')
+      );
+      
+      const requestData = {
+        property_id: unit ? undefined : property.id,
+        unit_id: unit?.id,
+        tenant_id: user?.id || '',
+        status: 'en_attente',
+        tenant_info: {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          message: formData.message,
+          idDocument: formData.idDocument ? URL.createObjectURL(formData.idDocument) : undefined,
+          communicationPreference: formData.communicationPreference,
+        },
+      };
 
-    alert('✅ Votre demande a été envoyée avec succès au propriétaire ! Vous recevrez une notification de sa réponse.');
-    onClose();
+      // Add request
+      await addRequest(requestData);
+
+      // Update property/unit status
+      if (unit) {
+        await updateUnit(unit.id, { status: 'en_attente_validation' });
+      } else {
+        await updateProperty(property.id, { status: 'en_attente_validation' });
+      }
+
+      // Send notification to owner via Supabase function
+      await supabase.rpc('create_notification', {
+        target_user_id: property.owner_id,
+        notification_type: 'general',
+        notification_title: 'Nouvelle demande de logement',
+        notification_message: `${formData.firstName} ${formData.lastName} souhaite ${unit ? `rejoindre la chambre ${unit.name}` : 'louer votre logement'} - ${property.name}`,
+        notification_data: {
+          property_id: property.id,
+          unit_id: unit?.id,
+          tenant_id: user?.id
+        }
+      });
+
+      alert('✅ Votre demande a été envoyée avec succès au propriétaire ! Vous recevrez une notification de sa réponse.');
+      onClose();
+    } catch (error) {
+      console.error('Error submitting request:', error);
+      alert('Erreur lors de l\'envoi de la demande');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,7 +124,7 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
         <div className="p-6 bg-blue-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900 mb-2">{property.name}</h3>
           <p className="text-sm text-gray-600">
-            {property.address.street}, {property.address.city}
+            {property.address?.street}, {property.address?.city}
           </p>
           {unit && (
             <div className="mt-2 p-3 bg-white rounded-lg">
@@ -258,6 +251,7 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
               </label>
             </div>
           </div>
+
           {/* ID Document */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
@@ -308,14 +302,16 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
               type="button"
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={loading}
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={loading}
             >
-              Envoyer la demande
+              {loading ? 'Envoi...' : 'Envoyer la demande'}
             </button>
           </div>
         </form>

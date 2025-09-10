@@ -98,7 +98,7 @@ const PlanCard: React.FC<PlanCardProps> = ({ plan, isCurrentPlan, onSelectPlan, 
         <button
           onClick={() => onSelectPlan(plan)}
           disabled={disabled || isCurrentPlan}
-          className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+          className={`w-full py-3 px-4 rounded-lg font-medium transition-colors cursor-pointer ${
             isCurrentPlan
               ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
               : planData.popular

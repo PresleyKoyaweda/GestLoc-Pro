@@ -1,25 +1,27 @@
 import React, { useState } from 'react';
 import { Search, MapPin, Filter, Calendar, Bed, Bath, Users, Home, Eye, Clock } from 'lucide-react';
-import { Property, Unit, PropertyRequest } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { usePropertyRequests } from '../../hooks/usePropertyRequests';
+import { useVisitRequests } from '../../hooks/useVisitRequests';
+import { useTenants } from '../../hooks/useTenants';
 import { useAuth } from '../../contexts/AuthContext';
 import PropertyRequestForm from './PropertyRequestForm';
 import PropertyDetailModal from './PropertyDetailModal';
 import VisitRequestForm from './VisitRequestForm';
 import GoogleMap from './GoogleMap';
-import { useNotifications } from '../../hooks/useNotifications';
 
 const PropertySearch: React.FC = () => {
   const { user } = useAuth();
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [requests] = useLocalStorage<PropertyRequest[]>('gestionloc_requests', []);
-  const [visitRequests] = useLocalStorage('gestionloc_visit_requests', []);
-  const [tenants] = useLocalStorage('gestionloc_tenants', []);
+  const { properties, loading } = useProperties();
+  const { units } = useUnits();
+  const { requests } = usePropertyRequests();
+  const { visitRequests } = useVisitRequests();
+  const { tenants } = useTenants();
   const [searchTerm, setSearchTerm] = useState('');
   const [showRequestForm, setShowRequestForm] = useState(false);
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<any>(null);
+  const [selectedUnit, setSelectedUnit] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVisitForm, setShowVisitForm] = useState(false);
   const [filters, setFilters] = useState({
@@ -34,8 +36,8 @@ const PropertySearch: React.FC = () => {
       return property.status === 'libre';
     }
     // For shared properties, check if any units are available
-    const propertyUnits = units.filter(unit => unit.propertyId === property.id);
-    return propertyUnits.some(unit => unit.status === 'available');
+    const propertyUnits = units.filter(unit => unit.property_id === property.id);
+    return propertyUnits.some(unit => unit.status === 'libre');
   });
 
   const filteredProperties = availableProperties.filter(property => {
@@ -46,7 +48,7 @@ const PropertySearch: React.FC = () => {
     if (!matchesSearch) return false;
 
     if (filters.type !== 'all' && property.type !== filters.type) return false;
-    if (filters.minArea && property.totalArea < Number(filters.minArea)) return false;
+    if (filters.minArea && property.total_area < Number(filters.minArea)) return false;
 
     // Price filtering
     if (property.type === 'entire') {
@@ -54,7 +56,7 @@ const PropertySearch: React.FC = () => {
       if (filters.minPrice && rent < Number(filters.minPrice)) return false;
       if (filters.maxPrice && rent > Number(filters.maxPrice)) return false;
     } else {
-      const propertyUnits = units.filter(unit => unit.propertyId === property.id && unit.status === 'available');
+      const propertyUnits = units.filter(unit => unit.property_id === property.id && unit.status === 'libre');
       if (propertyUnits.length === 0) return false;
       
       const minRent = Math.min(...propertyUnits.map(unit => unit.rent));
@@ -67,78 +69,78 @@ const PropertySearch: React.FC = () => {
     return true;
   });
 
-  const handleJoinProperty = (property: Property, unit?: Unit) => {
+  const handleJoinProperty = (property: any, unit?: any) => {
     setSelectedProperty(property);
     setSelectedUnit(unit || null);
     setShowRequestForm(true);
   };
 
-  const handleVisitRequest = (property: Property, unit?: Unit) => {
+  const handleVisitRequest = (property: any, unit?: any) => {
     setSelectedProperty(property);
     setSelectedUnit(unit || null);
     setShowVisitForm(true);
   };
 
-  const handleViewDetails = (property: Property) => {
+  const handleViewDetails = (property: any) => {
     setSelectedProperty(property);
     setShowDetailModal(true);
   };
 
-  const getPropertyStatus = (property: Property) => {
+  const getPropertyStatus = (property: any) => {
     if (property.type === 'entire') {
       return property.status;
     }
-    const propertyUnits = units.filter(unit => unit.propertyId === property.id);
-    const availableUnits = propertyUnits.filter(unit => unit.status === 'available');
-    const pendingUnits = propertyUnits.filter(unit => unit.status === 'occupied');
+    const propertyUnits = units.filter(unit => unit.property_id === property.id);
+    const availableUnits = propertyUnits.filter(unit => unit.status === 'libre');
+    const pendingUnits = propertyUnits.filter(unit => unit.status === 'occupe');
     
     if (availableUnits.length === 0) return 'occupe';
     if (pendingUnits.length > 0) return 'en_attente_validation';
     return 'libre';
   };
 
-  const hasUserRequested = (property: Property, unit?: Unit) => {
+  const hasUserRequested = (property: any, unit?: any) => {
     return requests.some(req => 
-      req.tenantId === user?.id &&
+      req.tenant_id === user?.id &&
       req.status === 'en_attente' &&
-      ((unit && req.unitId === unit.id) || (!unit && req.propertyId === property.id))
+      ((unit && req.unit_id === unit.id) || (!unit && req.property_id === property.id))
     );
   };
 
-  const hasUserVisitRequest = (property: Property, unit?: Unit) => {
+  const hasUserVisitRequest = (property: any, unit?: any) => {
     return visitRequests.some(req => 
-      req.tenantId === user?.id &&
-      req.propertyId === property.id &&
-      (unit ? req.unitId === unit.id : !req.unitId) &&
+      req.tenant_id === user?.id &&
+      req.property_id === property.id &&
+      (unit ? req.unit_id === unit.id : !req.unit_id) &&
       (req.status === 'confirmed' || req.status === 'completed')
     );
   };
 
-  const isUserTenant = (property: Property, unit?: Unit) => {
+  const isUserTenant = (property: any, unit?: any) => {
     return tenants.some(tenant => 
-      tenant.userId === user?.id &&
-      tenant.propertyId === property.id &&
-      (unit ? tenant.unitId === unit.id : !tenant.unitId)
+      tenant.user_id === user?.id &&
+      tenant.property_id === property.id &&
+      (unit ? tenant.unit_id === unit.id : !tenant.unit_id)
     );
   };
 
-  const getRequestStatus = (property: Property, unit?: Unit) => {
+  const getRequestStatus = (property: any, unit?: any) => {
     const request = requests.find(req => 
-      req.tenantId === user?.id &&
-      ((unit && req.unitId === unit.id) || (!unit && req.propertyId === property.id))
+      req.tenant_id === user?.id &&
+      ((unit && req.unit_id === unit.id) || (!unit && req.property_id === property.id))
     );
     return request?.status;
   };
 
-  const isRequestAccepted = (property: Property, unit?: Unit) => {
+  const isRequestAccepted = (property: any, unit?: any) => {
     return getRequestStatus(property, unit) === 'acceptee';
   };
 
-  const isRequestRejected = (property: Property, unit?: Unit) => {
+  const isRequestRejected = (property: any, unit?: any) => {
     return getRequestStatus(property, unit) === 'rejetee';
   };
 
-  const canJoinProperty = (property: Property, unit?: Unit) => {
+  const canJoinProperty = (property: any, unit?: any) => {
     const visitConfirmed = hasUserVisitRequest(property, unit);
     const notAlreadyRequested = !hasUserRequested(property, unit);
     const notAlreadyTenant = !isUserTenant(property, unit);
@@ -146,6 +148,21 @@ const PropertySearch: React.FC = () => {
     
     return visitConfirmed && notAlreadyRequested && notAlreadyTenant && notAcceptedOrRejected;
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-64 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -214,8 +231,8 @@ const PropertySearch: React.FC = () => {
           </div>
         ) : (
           filteredProperties.map((property) => {
-            const propertyUnits = units.filter(unit => unit.propertyId === property.id && unit.status === 'available');
-            const allPropertyUnits = units.filter(unit => unit.propertyId === property.id);
+            const propertyUnits = units.filter(unit => unit.property_id === property.id && unit.status === 'libre');
+            const allPropertyUnits = units.filter(unit => unit.property_id === property.id);
             const propertyStatus = getPropertyStatus(property);
             
             return (
@@ -247,14 +264,14 @@ const PropertySearch: React.FC = () => {
                     
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Superficie</span>
-                      <span className="text-sm font-medium">{property.totalArea} m²</span>
+                      <span className="text-sm font-medium">{property.total_area} m²</span>
                     </div>
 
                     {property.type === 'entire' ? (
                       <>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Pièces</span>
-                          <span className="text-sm font-medium">{property.totalRooms}½</span>
+                          <span className="text-sm font-medium">{property.total_rooms}½</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Loyer</span>
@@ -461,7 +478,7 @@ const PropertySearch: React.FC = () => {
       {showDetailModal && selectedProperty && (
         <PropertyDetailModal
           property={selectedProperty}
-          units={units.filter(u => u.propertyId === selectedProperty.id)}
+          units={units.filter(u => u.property_id === selectedProperty.id)}
           onClose={() => {
             setShowDetailModal(false);
             setSelectedProperty(null);

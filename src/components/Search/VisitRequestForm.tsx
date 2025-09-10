@@ -1,26 +1,22 @@
 import React, { useState } from 'react';
 import { X, Calendar, Clock, User, Mail, Phone, MessageSquare } from 'lucide-react';
-import { Property, Unit, VisitRequest, VisitSlot } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useVisitRequests } from '../../hooks/useVisitRequests';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNotifications } from '../../hooks/useNotifications';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
+import { supabase } from '../../lib/supabase';
 
 interface VisitRequestFormProps {
-  property: Property;
-  unit?: Unit | null;
+  property: any;
+  unit?: any | null;
   onClose: () => void;
 }
 
 const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onClose }) => {
   const { user } = useAuth();
-  const [visitRequests, setVisitRequests] = useLocalStorage<VisitRequest[]>('gestionloc_visit_requests', []);
-  const { addNotification } = useNotifications(property.ownerId);
-  const { addHistoryEntry } = useTenantHistory();
+  const { addVisitRequest, visitRequests } = useVisitRequests();
   
   const [formData, setFormData] = useState({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
+    firstName: user?.first_name || '',
+    lastName: user?.last_name || '',
     email: user?.email || '',
     phone: user?.phone || '',
     message: '',
@@ -29,9 +25,11 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
     communicationPreference: user?.preferences?.aiCommunication || 'email' as 'email' | 'sms',
   });
 
-  const [availableSlots] = useState<VisitSlot[]>(() => {
+  const [loading, setLoading] = useState(false);
+
+  const [availableSlots] = useState(() => {
     // Generate available slots for the next 14 days
-    const slots: VisitSlot[] = [];
+    const slots: any[] = [];
     const today = new Date();
     
     for (let i = 1; i <= 14; i++) {
@@ -47,9 +45,9 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
       times.forEach(time => {
         const slotId = `${dateStr}-${time}`;
         const isBooked = visitRequests.some(req => 
-          req.propertyId === property.id && 
-          req.visitDate === dateStr &&
-          req.visitTime === time &&
+          req.property_id === property.id && 
+          req.visit_date === dateStr &&
+          req.visit_time === time &&
           req.status !== 'cancelled'
         );
         
@@ -67,64 +65,60 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
     return slots;
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     
-    if (!formData.selectedDate || !formData.selectedTime) {
-      alert('Veuillez sélectionner une date et une heure pour la visite.');
-      return;
-    }
-
-    const slotId = `${formData.selectedDate}-${formData.selectedTime}`;
-    
-    const newVisitRequest: VisitRequest = {
-      id: Date.now().toString(),
-      propertyId: property.id,
-      unitId: unit?.id,
-      tenantId: user?.id || '',
-      slotId: slotId,
-      status: 'pending',
-      tenantInfo: {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        message: formData.message,
-        communicationPreference: formData.communicationPreference,
-      },
-      requestDate: new Date(),
-      visitDate: formData.selectedDate,
-      visitTime: formData.selectedTime,
-    };
-
-    setVisitRequests(prev => [...prev, newVisitRequest]);
-
-    // Notify owner
-    addNotification({
-      userId: property.ownerId,
-      type: 'general',
-      title: 'Demande de visite',
-      message: `${formData.firstName} ${formData.lastName} souhaite visiter ${unit ? `la chambre ${unit.name}` : 'votre logement'} - ${property.name} le ${new Date(formData.selectedDate).toLocaleDateString('fr-FR')} à ${formData.selectedTime}`,
-      read: false,
-    });
-
-    // Add to tenant history
-    addHistoryEntry({
-      type: 'visit_request',
-      title: `Demande de visite - ${property.name}`,
-      description: `Demande de visite pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} le ${new Date(formData.selectedDate).toLocaleDateString('fr-FR')} à ${formData.selectedTime}`,
-      propertyId: property.id,
-      unitId: unit?.id,
-      relatedId: newVisitRequest.id,
-      metadata: {
-        visitDate: formData.selectedDate,
-        visitTime: formData.selectedTime,
-        status: 'pending'
+    try {
+      if (!formData.selectedDate || !formData.selectedTime) {
+        alert('Veuillez sélectionner une date et une heure pour la visite.');
+        return;
       }
-    });
 
-    alert('Votre demande de visite a été envoyée au propriétaire !');
-    onClose();
+      const slotId = `${formData.selectedDate}-${formData.selectedTime}`;
+      
+      const visitRequestData = {
+        property_id: property.id,
+        unit_id: unit?.id,
+        tenant_id: user?.id || '',
+        slot_id: slotId,
+        status: 'pending',
+        tenant_info: {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          message: formData.message,
+          communicationPreference: formData.communicationPreference,
+        },
+        visit_date: formData.selectedDate,
+        visit_time: formData.selectedTime,
+      };
+
+      await addVisitRequest(visitRequestData);
+
+      // Notify owner via Supabase function
+      await supabase.rpc('create_notification', {
+        target_user_id: property.owner_id,
+        notification_type: 'general',
+        notification_title: 'Demande de visite',
+        notification_message: `${formData.firstName} ${formData.lastName} souhaite visiter ${unit ? `la chambre ${unit.name}` : 'votre logement'} - ${property.name} le ${new Date(formData.selectedDate).toLocaleDateString('fr-FR')} à ${formData.selectedTime}`,
+        notification_data: {
+          property_id: property.id,
+          unit_id: unit?.id,
+          visit_date: formData.selectedDate,
+          visit_time: formData.selectedTime
+        }
+      });
+
+      alert('Votre demande de visite a été envoyée au propriétaire !');
+      onClose();
+    } catch (error) {
+      console.error('Error submitting visit request:', error);
+      alert('Erreur lors de l\'envoi de la demande de visite');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -141,7 +135,7 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
     if (!acc[slot.date]) acc[slot.date] = [];
     acc[slot.date].push(slot);
     return acc;
-  }, {} as Record<string, VisitSlot[]>);
+  }, {} as Record<string, any[]>);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -162,7 +156,7 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
         <div className="p-6 bg-blue-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900 mb-2">{property.name}</h3>
           <p className="text-sm text-gray-600">
-            {property.address.street}, {property.address.city}
+            {property.address?.street}, {property.address?.city}
           </p>
           {unit && (
             <div className="mt-2 p-3 bg-white rounded-lg">
@@ -339,20 +333,23 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
               </label>
             </div>
           </div>
+
           {/* Form Actions */}
           <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={loading}
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={loading}
             >
-              Envoyer la demande
+              {loading ? 'Envoi...' : 'Envoyer la demande'}
             </button>
           </div>
         </form>

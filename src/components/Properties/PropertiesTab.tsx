@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, Building2, Users, DollarSign, Edit, Trash2 } from 'lucide-react';
-import { Property, Unit, Tenant } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { Plus, Building2, Users, DollarSign, Edit, Trash2, Wrench } from 'lucide-react';
+import { useProperties } from '../../hooks/useProperties';
+import { useTenants } from '../../hooks/useTenants';
+import { useUnits } from '../../hooks/useUnits';
+import { usePropertyEquipment } from '../../hooks/usePropertyEquipment';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -14,51 +16,54 @@ interface PropertiesTabProps {
 const PropertiesTab: React.FC<PropertiesTabProps> = ({ onTabChange }) => {
   const { t, formatCurrency } = useTranslation();
   const { user } = useAuth();
-  const [properties, setProperties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
+  const { properties, loading, deleteProperty } = useProperties();
+  const { units } = useUnits();
+  const { tenants } = useTenants();
+  const { equipment } = usePropertyEquipment();
   const { canAddProperty, currentPlan } = useSubscription();
   const [showForm, setShowForm] = useState(false);
-  const [editingProperty, setEditingProperty] = useState<Property | undefined>();
+  const [editingProperty, setEditingProperty] = useState<any>(undefined);
 
-  const handleEdit = (property: Property) => {
+  const handleEdit = (property: any) => {
     setEditingProperty(property);
     setShowForm(true);
   };
 
-  const handleDelete = (propertyId: string) => {
+  const handleDelete = async (propertyId: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette propriété ?')) {
-      setProperties(prev => prev.filter(p => p.id !== propertyId));
+      try {
+        await deleteProperty(propertyId);
+      } catch (error) {
+        console.error('Error deleting property:', error);
+        alert('Erreur lors de la suppression de la propriété');
+      }
     }
   };
 
   const getPropertyUnits = (propertyId: string) => {
-    return units.filter(unit => unit.propertyId === propertyId);
+    return units.filter(unit => unit.property_id === propertyId);
   };
 
   const getPropertyTenants = (propertyId: string) => {
-    return tenants.filter(tenant => tenant.propertyId === propertyId);
+    return tenants.filter(tenant => tenant.property_id === propertyId);
   };
 
-  const getOccupancyStats = (property: Property) => {
+  const getOccupancyStats = (property: any) => {
     if (property.type === 'entire') {
-      // For entire properties, check if there's a tenant
       const propertyTenants = getPropertyTenants(property.id);
       return {
         total: 1,
         occupied: propertyTenants.length > 0 ? 1 : 0,
         available: propertyTenants.length > 0 ? 0 : 1,
-        pending: 0 // Could be enhanced to track pending applications
+        pending: 0
       };
     } else {
-      // For shared properties, check each unit
       const propertyUnits = getPropertyUnits(property.id);
       const propertyTenants = getPropertyTenants(property.id);
       
-      // Count occupied units based on tenants assigned to units
       const occupied = propertyTenants.length;
       const available = propertyUnits.length - occupied;
-      const pending = 0; // Could be enhanced to track pending applications
+      const pending = 0;
       
       return {
         total: propertyUnits.length,
@@ -77,6 +82,25 @@ const PropertiesTab: React.FC<PropertiesTabProps> = ({ onTabChange }) => {
     setEditingProperty(undefined);
     setShowForm(true);
   };
+
+  const getPropertyEquipmentCount = (propertyId: string) => {
+    return equipment.filter(eq => eq.property_id === propertyId).length;
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-64 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -132,7 +156,7 @@ const PropertiesTab: React.FC<PropertiesTabProps> = ({ onTabChange }) => {
                         {property.address?.street}
                         {property.address?.apartment && `, ${property.address.apartment}`}
                         <br />
-                        {property.address?.city}, {property.address?.province} {property.address?.postalCode}
+                        {property.address?.city}, {property.address?.province} {property.address?.postal_code}
                       </p>
                     </div>
                     <div className="flex space-x-2">
@@ -189,9 +213,10 @@ const PropertiesTab: React.FC<PropertiesTabProps> = ({ onTabChange }) => {
                         }
                       </span>
                     </div>
+
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Superficie</span>
-                      <span className="text-sm font-medium">{property.totalArea} m²</span>
+                      <span className="text-sm font-medium">{property.total_area} m²</span>
                     </div>
 
                     <div className="flex items-center justify-between">
@@ -208,31 +233,6 @@ const PropertiesTab: React.FC<PropertiesTabProps> = ({ onTabChange }) => {
                         {propertyTenants.length} locataire{propertyTenants.length !== 1 ? 's' : ''}
                       </button>
                     </div>
-
-                    {/* Détail des chambres pour les colocations */}
-                    {property.type === 'shared' && propertyUnits.length > 0 && (
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-medium text-gray-700 uppercase tracking-wider">Détail des chambres</h4>
-                        {propertyUnits.map((unit) => {
-                          const unitTenant = propertyTenants.find(t => t.unitId === unit.id);
-                          const isOccupied = !!unitTenant;
-                          return (
-                            <div key={unit.id} className="flex items-center justify-between text-xs">
-                              <span className="text-gray-600">{unit.name}</span>
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium">{unit.rent}$</span>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  isOccupied ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                                }`}>
-                                  {isOccupied ? 'Occupée' : 'Libre'}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <hr className="border-gray-200" />
 
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Occupation</span>
@@ -268,17 +268,23 @@ const PropertiesTab: React.FC<PropertiesTabProps> = ({ onTabChange }) => {
                         {property.status === 'libre' ? 'Libre' :
                          property.status === 'en_attente_validation' ? 'En attente' : 'Occupé'}
                       </span>
-                      
-                      {property.status === 'en_attente_validation' && (
-                        <button
-                          onClick={() => onTabChange && onTabChange('property-requests')}
-                          className="text-xs text-orange-600 hover:text-orange-800 font-medium"
-                        >
-                          Voir demandes →
-                        </button>
-                      )}
                     </div>
                   </div>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Équipements</span>
+                  <span className="text-sm font-medium text-purple-600">
+                    {getPropertyEquipmentCount(property.id)} équipement{getPropertyEquipmentCount(property.id) !== 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={() => handleEdit(property)}
+                    className="text-purple-600 hover:text-purple-800 text-sm font-medium flex items-center"
+                    title="Gérer les équipements"
+                  >
+                    <Wrench className="w-4 h-4 mr-1" />
+                    Équipements
+                  </button>
                 </div>
               </div>
             );

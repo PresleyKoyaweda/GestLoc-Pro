@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Plus, AlertTriangle, Edit, Trash2, Check, Clock, Filter, Image, DollarSign, ExternalLink, User, Home } from 'lucide-react';
-import type { Issue, IssueStatus, IssuePriority, Property, Unit, Expense, Tenant, User as UserType } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useIssues } from '../../hooks/useIssues';
+import { useExpenses } from '../../hooks/useExpenses';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { useTenants } from '../../hooks/useTenants';
 import { useAuth } from '../../contexts/AuthContext';
 import IssueForm from './IssueForm';
 
@@ -11,59 +14,65 @@ interface IssuesTabProps {
 
 const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
   const { user } = useAuth();
-  const [issues, setIssues] = useLocalStorage<Issue[]>('gestionloc_issues', []);
-  const [expenses, setExpenses] = useLocalStorage<Expense[]>('gestionloc_expenses', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
+  const { issues, loading, updateIssue, deleteIssue } = useIssues();
+  const { expenses } = useExpenses();
+  const { properties } = useProperties();
+  const { units } = useUnits();
+  const { tenants } = useTenants();
   const [showForm, setShowForm] = useState(false);
-  const [editingIssue, setEditingIssue] = useState<Issue | undefined>();
+  const [editingIssue, setEditingIssue] = useState<any>(undefined);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>();
-  const [filter, setFilter] = useState<IssueStatus | 'all'>('all');
+  const [selectedIssue, setSelectedIssue] = useState<any>(undefined);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
 
   const isOwner = user?.role === 'owner';
 
   // For tenants, find their tenant record to get associated issues
-  const currentTenant = tenants.find(t => t.userId === user?.id);
+  const currentTenant = tenants.find(t => t.user_id === user?.id);
   
   const canReportIssue = isOwner || currentTenant;
 
   // Filter issues based on user role
   const userIssues = isOwner 
     ? issues 
-    : issues.filter(issue => issue.tenantId === currentTenant?.id || issue.tenantId === user?.id);
-  const handleEdit = (issue: Issue) => {
+    : issues.filter(issue => issue.tenant_id === currentTenant?.id || issue.tenant_id === user?.id);
+
+  const handleEdit = (issue: any) => {
     setEditingIssue(issue);
     setShowForm(true);
   };
 
-  const handleDelete = (issueId: string) => {
+  const handleDelete = async (issueId: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer ce problème ?')) {
-      setIssues(prev => prev.filter(i => i.id !== issueId));
+      try {
+        await deleteIssue(issueId);
+      } catch (error) {
+        console.error('Error deleting issue:', error);
+        alert('Erreur lors de la suppression du problème');
+      }
     }
   };
 
-  const handleStatusChange = (issue: Issue) => {
+  const handleStatusChange = (issue: any) => {
     setSelectedIssue(issue);
     setShowStatusModal(true);
   };
 
-  const updateIssueStatus = (newStatus: IssueStatus) => {
+  const updateIssueStatus = async (newStatus: string) => {
     if (!selectedIssue) return;
     
-    setIssues(prev => prev.map(issue => 
-      issue.id === selectedIssue.id 
-        ? { 
-            ...issue, 
-            status: newStatus,
-            resolvedAt: newStatus === 'resolved' ? new Date() : undefined
-          }
-        : issue
-    ));
-    
-    setShowStatusModal(false);
-    setSelectedIssue(undefined);
+    try {
+      await updateIssue(selectedIssue.id, {
+        status: newStatus,
+        resolved_at: newStatus === 'resolved' ? new Date().toISOString() : undefined
+      });
+      
+      setShowStatusModal(false);
+      setSelectedIssue(undefined);
+    } catch (error) {
+      console.error('Error updating issue status:', error);
+      alert('Erreur lors de la mise à jour du statut');
+    }
   };
 
   const getTenantName = (tenantId: string) => {
@@ -71,6 +80,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     if (!tenant) return 'Locataire inconnu';
     return `Locataire #${tenant.id.slice(-4)}`;
   };
+
   const getPropertyName = (propertyId?: string) => {
     if (!propertyId) return 'Non spécifié';
     const property = properties.find(p => p.id === propertyId);
@@ -84,14 +94,14 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
   };
 
   const getLinkedExpenses = (issueId: string) => {
-    return expenses.filter(e => e.issueId === issueId);
+    return expenses.filter(e => e.issue_id === issueId);
   };
 
   const getTotalExpenseAmount = (issueId: string) => {
     return getLinkedExpenses(issueId).reduce((sum, expense) => sum + expense.amount, 0);
   };
 
-  const getPriorityColor = (priority: IssuePriority) => {
+  const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'low':
         return 'bg-green-100 text-green-800';
@@ -106,7 +116,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const getPriorityLabel = (priority: IssuePriority) => {
+  const getPriorityLabel = (priority: string) => {
     switch (priority) {
       case 'low':
         return 'Faible';
@@ -121,7 +131,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const getStatusColor = (status: IssueStatus) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
@@ -134,7 +144,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const getStatusLabel = (status: IssueStatus) => {
+  const getStatusLabel = (status: string) => {
     switch (status) {
       case 'pending':
         return 'En attente';
@@ -147,7 +157,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const getStatusIcon = (status: IssueStatus) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending':
         return <Clock className="w-4 h-4" />;
@@ -160,13 +170,10 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const filteredIssues = issues.filter(issue => 
-    filter === 'all' || issue.status === filter
-  );
-
   const filteredUserIssues = userIssues.filter(issue => 
     filter === 'all' || issue.status === filter
   );
+
   const stats = {
     total: userIssues.length,
     pending: userIssues.filter(i => i.status === 'pending').length,
@@ -174,6 +181,21 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
     resolved: userIssues.filter(i => i.status === 'resolved').length,
     urgent: userIssues.filter(i => i.priority === 'urgent').length,
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -342,21 +364,21 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
                   <div className="flex items-center space-x-4 text-sm text-gray-600 mb-3">
                     <span className="flex items-center">
                       <User className="w-4 h-4 mr-1" />
-                      Signalé par: {getTenantName(issue.tenantId)}
+                      Signalé par: {getTenantName(issue.tenant_id)}
                     </span>
                   </div>
                   
                   <p className="text-gray-600 mb-3">{issue.description}</p>
                   <div className="flex items-center space-x-4 text-sm text-gray-500">
                     <span>
-                      📍 {getPropertyName(issue.propertyId)}{getUnitName(issue.unitId)}
+                      📍 {getPropertyName(issue.property_id)}{getUnitName(issue.unit_id)}
                     </span>
                     <span>
-                      📅 {new Date(issue.createdAt).toLocaleDateString('fr-FR')}
+                      📅 {new Date(issue.created_at).toLocaleDateString('fr-FR')}
                     </span>
-                    {issue.resolvedAt && (
+                    {issue.resolved_at && (
                       <span>
-                        ✅ Résolu le {new Date(issue.resolvedAt).toLocaleDateString('fr-FR')}
+                        ✅ Résolu le {new Date(issue.resolved_at).toLocaleDateString('fr-FR')}
                       </span>
                     )}
                   </div>
@@ -390,7 +412,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
                   )}
                 </div>
                 
-                {(isOwner || issue.tenantId === user?.id || issue.tenantId === currentTenant?.id) && (
+                {(isOwner || issue.tenant_id === user?.id || issue.tenant_id === currentTenant?.id) && (
                   <div className="flex space-x-2 ml-4">
                     {isOwner && (
                       <button
@@ -410,25 +432,25 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
                     </button>
                     {isOwner && (
                       <button
-                      onClick={() => handleDelete(issue.id)}
-                      className="p-2 text-red-600 hover:text-red-800"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                        onClick={() => handleDelete(issue.id)}
+                        className="p-2 text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
                 )}
               </div>
 
               {/* Photos */}
-              {issue.photos.length > 0 && (
+              {issue.photos && issue.photos.length > 0 && (
                 <div className="mb-4">
                   <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                     <Image className="w-4 h-4 mr-1" />
                     Photos ({issue.photos.length})
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {issue.photos.slice(0, 4).map((photo, index) => (
+                    {issue.photos.slice(0, 4).map((photo: string, index: number) => (
                       <img
                         key={index}
                         src={photo}
@@ -447,10 +469,10 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
               )}
 
               {/* Owner Notes */}
-              {issue.ownerNotes && (
+              {issue.owner_notes && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <h4 className="text-sm font-medium text-blue-900 mb-1">Notes du propriétaire</h4>
-                  <p className="text-sm text-blue-800">{issue.ownerNotes}</p>
+                  <p className="text-sm text-blue-800">{issue.owner_notes}</p>
                 </div>
               )}
               
@@ -464,9 +486,9 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
                       <span className="ml-1">{getStatusLabel(issue.status)}</span>
                     </span>
                   </div>
-                  {issue.status === 'resolved' && issue.resolvedAt && (
+                  {issue.status === 'resolved' && issue.resolved_at && (
                     <div className="mt-2 text-sm text-green-600">
-                      ✅ Résolu le {new Date(issue.resolvedAt).toLocaleDateString('fr-FR')}
+                      ✅ Résolu le {new Date(issue.resolved_at).toLocaleDateString('fr-FR')}
                     </div>
                   )}
                 </div>
@@ -486,7 +508,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
             </div>
             
             <div className="space-y-3">
-              {(['pending', 'in_progress', 'resolved'] as IssueStatus[]).map((status) => (
+              {(['pending', 'in_progress', 'resolved'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => updateIssueStatus(status)}
@@ -522,6 +544,7 @@ const IssuesTab: React.FC<IssuesTabProps> = ({ onTabChange }) => {
           </div>
         </div>
       )}
+
       {showForm && (
         <IssueForm
           issue={editingIssue}

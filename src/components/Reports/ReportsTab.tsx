@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { BarChart3, Download, Calendar, DollarSign, TrendingUp, TrendingDown, PieChart, FileText } from 'lucide-react';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useProperties } from '../../hooks/useProperties';
+import { useTenants } from '../../hooks/useTenants';
+import { usePayments } from '../../hooks/usePayments';
+import { useExpenses } from '../../hooks/useExpenses';
 import { useSubscription } from '../../hooks/useSubscription';
-import { Property, Tenant, Payment, Expense } from '../../types';
 
 interface ReportsTabProps {
   onTabChange?: (tab: string) => void;
 }
 
 const ReportsTab: React.FC<ReportsTabProps> = ({ onTabChange }) => {
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
-  const [payments] = useLocalStorage<Payment[]>('gestionloc_payments', []);
-  const [expenses] = useLocalStorage<Expense[]>('gestionloc_expenses', []);
+  const { properties } = useProperties();
+  const { tenants } = useTenants();
+  const { payments } = usePayments();
+  const { expenses } = useExpenses();
   const { canUseAdvancedReports, canGeneratePDF } = useSubscription();
   
   const [selectedPeriod, setSelectedPeriod] = useState('month');
@@ -29,7 +31,7 @@ const ReportsTab: React.FC<ReportsTabProps> = ({ onTabChange }) => {
     : new Date(selectedYear, 11, 31);
 
   const periodPayments = payments.filter(p => {
-    const paymentDate = new Date(p.dueDate);
+    const paymentDate = new Date(p.due_date);
     return paymentDate >= startDate && paymentDate <= endDate;
   });
 

@@ -1,33 +1,67 @@
-import { useState, useEffect } from 'react';
-import { Notification } from '../types';
-import { useLocalStorage } from './useLocalStorage';
+import { useSupabaseData } from './useSupabaseData';
+import { useAuth } from '../contexts/AuthContext';
 
-export function useNotifications(userId: string) {
-  const [notifications, setNotifications] = useLocalStorage<Notification[]>('gestionloc_notifications', []);
+interface Notification {
+  id: string;
+  user_id: string;
+  type: 'payment_reminder' | 'payment_overdue' | 'issue_reported' | 'issue_resolved' | 'general';
+  title: string;
+  message: string;
+  read: boolean;
+  data: any;
+  created_at: string;
+}
 
-  const addNotification = (notification: Omit<Notification, 'id' | 'createdAt'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: Date.now().toString(),
-      createdAt: new Date(),
+export function useNotifications() {
+  const { user } = useAuth();
+  
+  const {
+    data: notifications,
+    loading,
+    error,
+    insert,
+    update,
+    remove,
+    refetch
+  } = useSupabaseData<Notification>('notifications', 
+    user ? { user_id: user.id } : undefined
+  );
+
+  const addNotification = async (notificationData: Omit<Notification, 'id' | 'created_at'>) => {
+    const newNotification = {
+      ...notificationData,
+      created_at: new Date().toISOString()
     };
-    setNotifications(prev => [newNotification, ...prev]);
+    
+    return await insert(newNotification);
   };
 
-  const markAsRead = (notificationId: string) => {
-    setNotifications(prev =>
-      prev.map(notif =>
-        notif.id === notificationId ? { ...notif, read: true } : notif
-      )
+  const markAsRead = async (notificationId: string) => {
+    return await update(notificationId, { read: true });
+  };
+
+  const markAllAsRead = async () => {
+    const unreadNotifications = notifications.filter(n => !n.read);
+    await Promise.all(
+      unreadNotifications.map(n => markAsRead(n.id))
     );
   };
 
-  const unreadCount = notifications.filter(n => !n.read && n.userId === userId).length;
+  const deleteNotification = async (notificationId: string) => {
+    return await remove(notificationId);
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   return {
-    notifications: notifications.filter(n => n.userId === userId),
+    notifications,
+    loading,
+    error,
     addNotification,
     markAsRead,
+    markAllAsRead,
+    deleteNotification,
     unreadCount,
+    refetch
   };
 }

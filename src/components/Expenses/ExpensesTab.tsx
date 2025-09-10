@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Plus, Receipt, Edit, Trash2, Download, Filter, Calendar, DollarSign, AlertTriangle, ExternalLink } from 'lucide-react';
-import { Expense, ExpenseType, Property, Unit, Issue } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useExpenses } from '../../hooks/useExpenses';
+import { useIssues } from '../../hooks/useIssues';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { useTranslation } from '../../hooks/useTranslation';
 import ExpenseForm from './ExpenseForm';
 
 interface ExpensesTabProps {
@@ -9,28 +12,34 @@ interface ExpensesTabProps {
 }
 
 const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
-  const [expenses, setExpenses] = useLocalStorage<Expense[]>('gestionloc_expenses', []);
-  const [issues, setIssues] = useLocalStorage<Issue[]>('gestionloc_issues', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
+  const { formatCurrency } = useTranslation();
+  const { expenses, loading, deleteExpense } = useExpenses();
+  const { issues } = useIssues();
+  const { properties } = useProperties();
+  const { units } = useUnits();
   const [showForm, setShowForm] = useState(false);
-  const [editingExpense, setEditingExpense] = useState<Expense | undefined>();
-  const [linkedIssue, setLinkedIssue] = useState<Issue | undefined>();
+  const [editingExpense, setEditingExpense] = useState<any>(undefined);
+  const [linkedIssue, setLinkedIssue] = useState<any>(undefined);
   const [filters, setFilters] = useState({
-    type: 'all' as ExpenseType | 'all',
-    propertyId: 'all',
+    type: 'all',
+    property_id: 'all',
     month: new Date().getMonth(),
     year: new Date().getFullYear(),
   });
 
-  const handleEdit = (expense: Expense) => {
+  const handleEdit = (expense: any) => {
     setEditingExpense(expense);
     setShowForm(true);
   };
 
-  const handleDelete = (expenseId: string) => {
+  const handleDelete = async (expenseId: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette dépense ?')) {
-      setExpenses(prev => prev.filter(e => e.id !== expenseId));
+      try {
+        await deleteExpense(expenseId);
+      } catch (error) {
+        console.error('Error deleting expense:', error);
+        alert('Erreur lors de la suppression de la dépense');
+      }
     }
   };
 
@@ -52,7 +61,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
     return issue ? issue.title : 'Problème supprimé';
   };
 
-  const getTypeLabel = (type: ExpenseType) => {
+  const getTypeLabel = (type: string) => {
     const labels = {
       maintenance: 'Maintenance',
       renovation: 'Rénovation',
@@ -61,10 +70,10 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
       taxes: 'Taxes',
       other: 'Autre',
     };
-    return labels[type];
+    return labels[type as keyof typeof labels] || type;
   };
 
-  const getTypeColor = (type: ExpenseType) => {
+  const getTypeColor = (type: string) => {
     const colors = {
       maintenance: 'bg-blue-100 text-blue-800',
       renovation: 'bg-purple-100 text-purple-800',
@@ -73,13 +82,13 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
       taxes: 'bg-red-100 text-red-800',
       other: 'bg-gray-100 text-gray-800',
     };
-    return colors[type];
+    return colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800';
   };
 
   const filteredExpenses = expenses.filter(expense => {
     const expenseDate = new Date(expense.date);
     const matchesType = filters.type === 'all' || expense.type === filters.type;
-    const matchesProperty = filters.propertyId === 'all' || expense.propertyId === filters.propertyId;
+    const matchesProperty = filters.property_id === 'all' || expense.property_id === filters.property_id;
     const matchesMonth = expenseDate.getMonth() === filters.month;
     const matchesYear = expenseDate.getFullYear() === filters.year;
     
@@ -92,7 +101,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
     byType: expenses.reduce((acc, expense) => {
       acc[expense.type] = (acc[expense.type] || 0) + expense.amount;
       return acc;
-    }, {} as Record<ExpenseType, number>),
+    }, {} as Record<string, number>),
   };
 
   const months = [
@@ -103,8 +112,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-  const handleAddExpenseFromIssue = (issue: Issue) => {
-    // Vérifier que le problème n'est pas résolu
+  const handleAddExpenseFromIssue = (issue: any) => {
     if (issue.status === 'resolved') {
       alert('Impossible d\'ajouter une dépense à un problème déjà résolu.');
       return;
@@ -116,6 +124,21 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
   };
 
   const pendingIssues = issues.filter(i => (i.status === 'pending' || i.status === 'in_progress'));
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -152,9 +175,9 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {pendingIssues.map((issue) => {
-              const property = properties.find(p => p.id === issue.propertyId);
-              const unit = units.find(u => u.id === issue.unitId);
-              const hasLinkedExpense = expenses.some(e => e.issueId === issue.id);
+              const property = properties.find(p => p.id === issue.property_id);
+              const unit = units.find(u => u.id === issue.unit_id);
+              const hasLinkedExpense = expenses.some(e => e.issue_id === issue.id);
               
               return (
                 <div key={issue.id} className="bg-white border border-orange-200 rounded-lg p-4">
@@ -217,7 +240,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Montant total</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalAmount.toLocaleString('fr-CA')}$</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalAmount)}</p>
             </div>
             <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
               <DollarSign className="w-6 h-6 text-red-600" />
@@ -229,7 +252,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Maintenance</p>
-              <p className="text-2xl font-bold text-gray-900">{(stats.byType.maintenance || 0).toLocaleString('fr-CA')}$</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.byType.maintenance || 0)}</p>
             </div>
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
               <Receipt className="w-6 h-6 text-blue-600" />
@@ -241,7 +264,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Rénovation</p>
-              <p className="text-2xl font-bold text-gray-900">{(stats.byType.renovation || 0).toLocaleString('fr-CA')}$</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.byType.renovation || 0)}</p>
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
               <Receipt className="w-6 h-6 text-purple-600" />
@@ -257,7 +280,7 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
             <select
               value={filters.type}
-              onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value as ExpenseType | 'all' }))}
+              onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">Tous les types</option>
@@ -273,8 +296,8 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Propriété</label>
             <select
-              value={filters.propertyId}
-              onChange={(e) => setFilters(prev => ({ ...prev, propertyId: e.target.value }))}
+              value={filters.property_id}
+              onChange={(e) => setFilters(prev => ({ ...prev, property_id: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">Toutes les propriétés</option>
@@ -376,18 +399,18 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
                           <div className="text-sm font-medium text-gray-900">
                             {expense.description}
                           </div>
-                          {expense.issueId && (
+                          {expense.issue_id && (
                             <div className="text-xs text-blue-600 flex items-center mt-1">
                               <ExternalLink className="w-3 h-3 mr-1" />
                               <button
                                 onClick={() => onTabChange && onTabChange('issues')}
                                 className="hover:underline"
                               >
-                                Lié au problème: {getIssueName(expense.issueId)}
+                                Lié au problème: {getIssueName(expense.issue_id)}
                               </button>
                             </div>
                           )}
-                          {expense.receiptUrl && (
+                          {expense.receipt_url && (
                             <div className="text-xs text-blue-600">
                               Justificatif disponible
                             </div>
@@ -402,12 +425,12 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {getPropertyName(expense.propertyId)}{getUnitName(expense.unitId)}
+                        {getPropertyName(expense.property_id)}{getUnitName(expense.unit_id)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        {expense.amount.toLocaleString('fr-CA')}$
+                        {formatCurrency(expense.amount)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -429,9 +452,9 @@ const ExpensesTab: React.FC<ExpensesTabProps> = ({ onTabChange }) => {
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        {expense.receiptUrl && (
+                        {expense.receipt_url && (
                           <button
-                            onClick={() => window.open(expense.receiptUrl, '_blank')}
+                            onClick={() => window.open(expense.receipt_url, '_blank')}
                             className="text-green-600 hover:text-green-900"
                           >
                             <Download className="w-4 h-4" />

@@ -2,16 +2,22 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 class AIService {
-  private async makeRequest(endpoint: string, data: any) {
+  private async makeRequest(endpoint: string, data: any, userId: string) {
     // Check if Supabase is configured
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       throw new Error('Supabase configuration required for AI services');
     }
 
+    // Get user's auth token for the request
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('User must be authenticated to use AI services');
+    }
+
     const response = await fetch(`${SUPABASE_URL}/functions/v1/${endpoint}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
@@ -30,7 +36,7 @@ class AIService {
       userId,
       payments,
       tenants,
-    });
+    }, userId);
   }
 
   async generateFiscalReport(userId: string, year: number, properties: any[], revenues: any[], expenses: any[]) {
@@ -40,7 +46,7 @@ class AIService {
       properties,
       revenues,
       expenses,
-    });
+    }, userId);
   }
 
   async generateCommunication(userId: string, type: string, context: any, customInstructions?: string) {
@@ -49,7 +55,7 @@ class AIService {
       type,
       context,
       customInstructions,
-    });
+    }, userId);
   }
 
   async diagnoseProblem(userId: string, issue: any, propertyInfo: any) {
@@ -57,7 +63,7 @@ class AIService {
       userId,
       issue,
       propertyInfo,
-    });
+    }, userId);
   }
 
   async generateContract(userId: string, propertyInfo: any, landlordInfo: any, tenantInfo: any, leaseTerms: any) {
@@ -67,7 +73,7 @@ class AIService {
       landlordInfo,
       tenantInfo,
       leaseTerms,
-    });
+    }, userId);
   }
 
   async generateMonthlySummary(userId: string, month: string, data: any) {
@@ -75,7 +81,7 @@ class AIService {
       userId,
       month,
       data,
-    });
+    }, userId);
   }
 }
 

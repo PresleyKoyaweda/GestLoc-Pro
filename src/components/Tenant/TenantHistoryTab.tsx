@@ -1,13 +1,30 @@
 import React, { useState } from 'react';
 import { Calendar, Home, Eye, FileText, DollarSign, AlertTriangle, Clock, CheckCircle, XCircle, MapPin, Filter } from 'lucide-react';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { Property, Unit, TenantHistory } from '../../types';
+import { useSupabaseData } from '../../hooks/useSupabaseData';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { useAuth } from '../../contexts/AuthContext';
+
+interface TenantHistory {
+  id: string;
+  tenant_id: string;
+  type: 'visit_request' | 'property_request' | 'lease_signed' | 'lease_ended' | 'payment' | 'issue_reported' | 'issue_resolved' | 'move_in' | 'move_out';
+  title: string;
+  description: string;
+  property_id?: string;
+  unit_id?: string;
+  related_id?: string;
+  metadata?: any;
+  created_at: string;
+}
 
 const TenantHistoryTab: React.FC = () => {
-  const { history, getHistoryByType } = useTenantHistory();
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
+  const { user }  = useAuth();
+  const { data: history, loading } = useSupabaseData<TenantHistory>('tenant_history', 
+    user ? { tenant_id: user.id } : undefined
+  );
+  const { properties } = useProperties();
+  const { units } = useUnits();
   const [filter, setFilter] = useState<TenantHistory['type'] | 'all'>('all');
 
   const getPropertyInfo = (propertyId?: string, unitId?: string) => {
@@ -91,16 +108,31 @@ const TenantHistoryTab: React.FC = () => {
     }
   };
 
-  const filteredHistory = filter === 'all' ? history : getHistoryByType(filter);
+  const filteredHistory = filter === 'all' ? history : history.filter(h => h.type === filter);
 
   const stats = {
     totalActivities: history.length,
-    visitRequests: getHistoryByType('visit_request').length,
-    propertyRequests: getHistoryByType('property_request').length,
-    leaseSigned: getHistoryByType('lease_signed').length,
-    payments: getHistoryByType('payment').length,
-    issuesReported: getHistoryByType('issue_reported').length,
+    visitRequests: history.filter(h => h.type === 'visit_request').length,
+    propertyRequests: history.filter(h => h.type === 'property_request').length,
+    leaseSigned: history.filter(h => h.type === 'lease_signed').length,
+    payments: history.filter(h => h.type === 'payment').length,
+    issuesReported: history.filter(h => h.type === 'issue_reported').length,
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="h-16 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -211,8 +243,8 @@ const TenantHistoryTab: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredHistory.map((entry, index) => {
-                const { property, unit } = getPropertyInfo(entry.propertyId, entry.unitId);
+              {filteredHistory.map((entry) => {
+                const { property, unit } = getPropertyInfo(entry.property_id, entry.unit_id);
                 
                 return (
                   <div key={entry.id} className="flex items-start space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
@@ -224,7 +256,7 @@ const TenantHistoryTab: React.FC = () => {
                       <div className="flex items-center justify-between mb-1">
                         <h4 className="text-sm font-semibold text-gray-900">{entry.title}</h4>
                         <span className="text-xs text-gray-500">
-                          {entry.createdAt.toLocaleDateString('fr-FR', {
+                          {new Date(entry.created_at).toLocaleDateString('fr-FR', {
                             day: 'numeric',
                             month: 'short',
                             year: 'numeric',
@@ -243,7 +275,7 @@ const TenantHistoryTab: React.FC = () => {
                             {property.name}
                             {unit && ` - ${unit.name}`}
                             {' • '}
-                            {property.address.street}, {property.address.city}
+                            {property.address?.street}, {property.address?.city}
                           </span>
                         </div>
                       )}

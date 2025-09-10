@@ -1,9 +1,12 @@
 import React from 'react';
 import { Home, Calendar, DollarSign, User, Phone, AlertTriangle, FileText, Plus } from 'lucide-react';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useTenants } from '../../hooks/useTenants';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { usePayments } from '../../hooks/usePayments';
+import { useIssues } from '../../hooks/useIssues';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
-import { Tenant, Property, Unit, Payment, Issue } from '../../types';
+import { useTranslation } from '../../hooks/useTranslation';
 import IssueForm from '../Issues/IssueForm';
 
 interface MyRentalTabProps {
@@ -12,16 +15,38 @@ interface MyRentalTabProps {
 
 const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
   const { user } = useAuth();
-  const { addHistoryEntry } = useTenantHistory();
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [payments] = useLocalStorage<Payment[]>('gestionloc_payments', []);
-  const [issues] = useLocalStorage<Issue[]>('gestionloc_issues', []);
+  const { formatCurrency } = useTranslation();
+  const { tenants, loading: tenantsLoading } = useTenants();
+  const { properties } = useProperties();
+  const { units } = useUnits();
+  const { payments } = usePayments();
+  const { issues } = useIssues();
   const [showIssueForm, setShowIssueForm] = React.useState(false);
 
   // Find tenant based on current user
-  const currentTenant = tenants.find(t => t.userId === user?.id);
+  const currentTenant = tenants.find(t => t.user_id === user?.id);
+  
+  if (tenantsLoading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
+            <div className="space-y-6">
+              {[1, 2].map(i => (
+                <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   if (!currentTenant) {
     return (
@@ -44,24 +69,24 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
     );
   }
 
-  const property = properties.find(p => p.id === currentTenant.propertyId);
-  const unit = units.find(u => u.id === currentTenant.unitId);
-  const tenantPayments = payments.filter(p => p.tenantId === currentTenant.id);
-  const tenantIssues = issues.filter(i => i.tenantId === currentTenant.id);
+  const property = properties.find(p => p.id === currentTenant.property_id);
+  const unit = units.find(u => u.id === currentTenant.unit_id);
+  const tenantPayments = payments.filter(p => p.tenant_id === currentTenant.id);
+  const tenantIssues = issues.filter(i => i.tenant_id === currentTenant.id);
 
   const nextPayment = tenantPayments
     .filter(p => p.status === 'pending')
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+    .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0];
 
   const recentPayments = tenantPayments
-    .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())
+    .sort((a, b) => new Date(b.due_date).getTime() - new Date(a.due_date).getTime())
     .slice(0, 5);
 
   const activeIssues = tenantIssues.filter(i => i.status !== 'resolved');
 
   const isLeaseExpiringSoon = () => {
     const today = new Date();
-    const endDate = new Date(currentTenant.leaseEnd);
+    const endDate = new Date(currentTenant.lease_end);
     const diffTime = endDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays <= 60 && diffDays > 0;
@@ -82,7 +107,7 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
             <div>
               <h3 className="text-sm font-medium text-orange-800">Bail expirant bientôt</h3>
               <p className="text-sm text-orange-700 mt-1">
-                Votre bail expire le {new Date(currentTenant.leaseEnd).toLocaleDateString('fr-FR')}. 
+                Votre bail expire le {new Date(currentTenant.lease_end).toLocaleDateString('fr-FR')}. 
                 Contactez votre propriétaire pour le renouvellement.
               </p>
             </div>
@@ -103,7 +128,7 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
               <div>
                 <h4 className="font-medium text-gray-900 mb-3">Adresse</h4>
                 <p className="text-gray-600">{property?.name}</p>
-                <p className="text-gray-600">{property?.address.street}, {property?.address.city}</p>
+                <p className="text-gray-600">{property?.address?.street}, {property?.address?.city}</p>
               </div>
               
               <div>
@@ -121,11 +146,11 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
                   )}
                   <div className="flex justify-between">
                     <span className="text-gray-600">Superficie</span>
-                    <span>{unit?.area || property?.totalArea} m²</span>
+                    <span>{unit?.area || property?.total_area} m²</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Loyer mensuel</span>
-                    <span className="font-semibold text-green-600">{currentTenant.monthlyRent}$</span>
+                    <span className="font-semibold text-green-600">{formatCurrency(currentTenant.monthly_rent)}</span>
                   </div>
                 </div>
               </div>
@@ -143,22 +168,22 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
               <div className="space-y-3">
                 <div>
                   <span className="text-sm text-gray-600">Début du bail</span>
-                  <p className="font-medium">{new Date(currentTenant.leaseStart).toLocaleDateString('fr-FR')}</p>
+                  <p className="font-medium">{new Date(currentTenant.lease_start).toLocaleDateString('fr-FR')}</p>
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Fin du bail</span>
-                  <p className="font-medium">{new Date(currentTenant.leaseEnd).toLocaleDateString('fr-FR')}</p>
+                  <p className="font-medium">{new Date(currentTenant.lease_end).toLocaleDateString('fr-FR')}</p>
                 </div>
               </div>
               
               <div className="space-y-3">
                 <div>
                   <span className="text-sm text-gray-600">Dépôt de garantie</span>
-                  <p className="font-medium">{currentTenant.depositPaid}$</p>
+                  <p className="font-medium">{formatCurrency(currentTenant.deposit_paid)}</p>
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Date d'échéance</span>
-                  <p className="font-medium">Le {currentTenant.paymentDueDate} de chaque mois</p>
+                  <p className="font-medium">Le {currentTenant.payment_due_date} de chaque mois</p>
                 </div>
               </div>
             </div>
@@ -178,9 +203,9 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
                 recentPayments.map((payment) => (
                   <div key={payment.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                     <div>
-                      <p className="font-medium">{payment.amount}$</p>
+                      <p className="font-medium">{formatCurrency(payment.amount)}</p>
                       <p className="text-sm text-gray-500">
-                        Échéance: {new Date(payment.dueDate).toLocaleDateString('fr-FR')}
+                        Échéance: {new Date(payment.due_date).toLocaleDateString('fr-FR')}
                       </p>
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -210,14 +235,14 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
               
               <div className="text-center">
                 <div className="text-3xl font-bold text-blue-600 mb-2">
-                  {nextPayment.amount}$
+                  {formatCurrency(nextPayment.amount)}
                 </div>
                 <div className="text-gray-600 mb-4">
-                  Échéance: {new Date(nextPayment.dueDate).toLocaleDateString('fr-FR')}
+                  Échéance: {new Date(nextPayment.due_date).toLocaleDateString('fr-FR')}
                 </div>
                 <button 
                   onClick={() => {
-                    if (confirm('Confirmer le paiement de ' + nextPayment.amount + '$ ?')) {
+                    if (confirm('Confirmer le paiement de ' + formatCurrency(nextPayment.amount) + ' ?')) {
                       // Redirect to payments tab where the payment can be processed
                       onTabChange?.('payments');
                     }
@@ -231,7 +256,7 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
           )}
 
           {/* Emergency Contact */}
-          {currentTenant.emergencyContact.name && (
+          {currentTenant.emergency_contact?.name && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <User className="w-5 h-5 mr-2" />
@@ -239,12 +264,12 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
               </h3>
               
               <div className="space-y-2">
-                <p className="font-medium">{currentTenant.emergencyContact.name}</p>
-                <p className="text-sm text-gray-600">{currentTenant.emergencyContact.relationship}</p>
-                {currentTenant.emergencyContact.phone && (
+                <p className="font-medium">{currentTenant.emergency_contact.name}</p>
+                <p className="text-sm text-gray-600">{currentTenant.emergency_contact.relationship}</p>
+                {currentTenant.emergency_contact.phone && (
                   <div className="flex items-center text-sm text-gray-600">
                     <Phone className="w-4 h-4 mr-2" />
-                    {currentTenant.emergencyContact.phone}
+                    {currentTenant.emergency_contact.phone}
                   </div>
                 )}
               </div>

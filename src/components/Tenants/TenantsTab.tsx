@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Plus, Users, Edit, Trash2, Phone, Mail, Calendar, DollarSign, AlertCircle } from 'lucide-react';
-import { Tenant, Property, Unit } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useTenants } from '../../hooks/useTenants';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { usePayments } from '../../hooks/usePayments';
+import { useIssues } from '../../hooks/useIssues';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import TenantForm from './TenantForm';
@@ -12,23 +15,28 @@ interface TenantsTabProps {
 
 const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
   const { user } = useAuth();
-  const [tenants, setTenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [payments] = useLocalStorage('gestionloc_payments', []);
-  const [issues] = useLocalStorage('gestionloc_issues', []);
+  const { tenants, loading, deleteTenant } = useTenants();
+  const { properties } = useProperties();
+  const { units } = useUnits();
+  const { payments } = usePayments();
+  const { issues } = useIssues();
   const { canAddTenant, currentPlan } = useSubscription();
   const [showForm, setShowForm] = useState(false);
-  const [editingTenant, setEditingTenant] = useState<Tenant | undefined>();
+  const [editingTenant, setEditingTenant] = useState<any>(undefined);
 
-  const handleEdit = (tenant: Tenant) => {
+  const handleEdit = (tenant: any) => {
     setEditingTenant(tenant);
     setShowForm(true);
   };
 
-  const handleDelete = (tenantId: string) => {
+  const handleDelete = async (tenantId: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer ce locataire ?')) {
-      setTenants(prev => prev.filter(t => t.id !== tenantId));
+      try {
+        await deleteTenant(tenantId);
+      } catch (error) {
+        console.error('Error deleting tenant:', error);
+        alert('Erreur lors de la suppression du locataire');
+      }
     }
   };
 
@@ -45,15 +53,16 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
   };
 
   const getTenantPaymentStatus = (tenantId: string) => {
-    const tenantPayments = payments.filter(p => p.tenantId === tenantId);
+    const tenantPayments = payments.filter(p => p.tenant_id === tenantId);
     const latePayments = tenantPayments.filter(p => p.status === 'late' || p.status === 'overdue');
     return latePayments.length;
   };
 
   const getTenantIssues = (tenantId: string) => {
-    return issues.filter(i => i.tenantId === tenantId && i.status !== 'resolved').length;
+    return issues.filter(i => i.tenant_id === tenantId && i.status !== 'resolved').length;
   };
-  const isLeaseExpiringSoon = (leaseEnd: Date) => {
+
+  const isLeaseExpiringSoon = (leaseEnd: string) => {
     const today = new Date();
     const endDate = new Date(leaseEnd);
     const diffTime = endDate.getTime() - today.getTime();
@@ -61,7 +70,7 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
     return diffDays <= 30 && diffDays > 0;
   };
 
-  const isLeaseExpired = (leaseEnd: Date) => {
+  const isLeaseExpired = (leaseEnd: string) => {
     const today = new Date();
     const endDate = new Date(leaseEnd);
     return endDate < today;
@@ -75,6 +84,21 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
     setEditingTenant(undefined);
     setShowForm(true);
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -117,7 +141,7 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
             <div>
               <p className="text-sm font-medium text-gray-600">Revenus mensuels</p>
               <p className="text-2xl font-bold text-gray-900">
-                {tenants.reduce((sum, tenant) => sum + tenant.monthlyRent, 0).toLocaleString('fr-CA')}$
+                {tenants.reduce((sum, tenant) => sum + tenant.monthly_rent, 0).toLocaleString('fr-CA')}$
               </p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -131,7 +155,7 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
             <div>
               <p className="text-sm font-medium text-gray-600">Baux expirant</p>
               <p className="text-2xl font-bold text-gray-900">
-                {tenants.filter(t => isLeaseExpiringSoon(t.leaseEnd)).length}
+                {tenants.filter(t => isLeaseExpiringSoon(t.lease_end)).length}
               </p>
             </div>
             <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
@@ -145,7 +169,7 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
             <div>
               <p className="text-sm font-medium text-gray-600">Baux expirés</p>
               <p className="text-2xl font-bold text-gray-900">
-                {tenants.filter(t => isLeaseExpired(t.leaseEnd)).length}
+                {tenants.filter(t => isLeaseExpired(t.lease_end)).length}
               </p>
             </div>
             <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
@@ -203,48 +227,48 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
                   const activeIssues = getTenantIssues(tenant.id);
                   
                   return (
-                  <tr key={tenant.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-                          <Users className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            Locataire #{tenant.id.slice(-4)}
+                    <tr key={tenant.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                            <Users className="w-5 h-5 text-blue-600" />
                           </div>
-                          <div className="text-sm text-gray-500">
-                            Échéance le {tenant.paymentDueDate}
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              Locataire #{tenant.id.slice(-4)}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              Échéance le {tenant.payment_due_date}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        <button
-                          onClick={() => onTabChange && onTabChange('properties')}
-                          className="text-sm text-blue-600 hover:text-blue-800"
-                        >
-                          {getPropertyName(tenant.propertyId)}{getUnitName(tenant.unitId)}
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {new Date(tenant.leaseStart).toLocaleDateString('fr-FR')} - {new Date(tenant.leaseEnd).toLocaleDateString('fr-FR')}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        <button
-                          onClick={() => onTabChange && onTabChange('payments')}
-                          className="text-sm font-medium text-green-600 hover:text-green-800"
-                        >
-                          {tenant.monthlyRent.toLocaleString('fr-CA')}$
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          <button
+                            onClick={() => onTabChange && onTabChange('properties')}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                          >
+                            {getPropertyName(tenant.property_id)}{getUnitName(tenant.unit_id)}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {new Date(tenant.lease_start).toLocaleDateString('fr-FR')} - {new Date(tenant.lease_end).toLocaleDateString('fr-FR')}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          <button
+                            onClick={() => onTabChange && onTabChange('payments')}
+                            className="text-sm font-medium text-green-600 hover:text-green-800"
+                          >
+                            {tenant.monthly_rent.toLocaleString('fr-CA')}$
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex space-x-2">
                           {latePayments > 0 && (
                             <button
@@ -263,39 +287,39 @@ const TenantsTab: React.FC<TenantsTabProps> = ({ onTabChange }) => {
                             </button>
                           )}
                         </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        isLeaseExpired(tenant.leaseEnd)
-                          ? 'bg-red-100 text-red-800'
-                          : isLeaseExpiringSoon(tenant.leaseEnd)
-                            ? 'bg-orange-100 text-orange-800'
-                            : 'bg-green-100 text-green-800'
-                      }`}>
-                        {isLeaseExpired(tenant.leaseEnd)
-                          ? 'Expiré'
-                          : isLeaseExpiringSoon(tenant.leaseEnd)
-                            ? 'Expire bientôt'
-                            : 'Actif'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleEdit(tenant)}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(tenant.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          isLeaseExpired(tenant.lease_end)
+                            ? 'bg-red-100 text-red-800'
+                            : isLeaseExpiringSoon(tenant.lease_end)
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-green-100 text-green-800'
+                        }`}>
+                          {isLeaseExpired(tenant.lease_end)
+                            ? 'Expiré'
+                            : isLeaseExpiringSoon(tenant.lease_end)
+                              ? 'Expire bientôt'
+                              : 'Actif'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleEdit(tenant)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(tenant.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>

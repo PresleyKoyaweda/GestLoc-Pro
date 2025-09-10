@@ -1,44 +1,36 @@
 import React, { useState } from 'react';
 import { CreditCard, Download, Calendar, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { Invoice, SubscriptionPlan } from '../../types';
+import { useSupabaseData } from '../../hooks/useSupabaseData';
+import { SubscriptionPlan } from '../../types';
 import PlanCard from './PlanCard';
 
+interface Invoice {
+  id: string;
+  user_id: string;
+  subscription_id: string;
+  amount: number;
+  currency: string;
+  status: 'paid' | 'pending' | 'failed' | 'draft';
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string;
+  paid_date?: string;
+  stripe_invoice_id?: string;
+  download_url?: string;
+  created_at: string;
+}
+
 const SubscriptionTab: React.FC = () => {
-  const { user, subscription, updateSubscription } = useAuth();
-  const { currentPlan, getDaysUntilRenewal, isPaymentOverdue } = useSubscription();
-  const { t, formatCurrency } = useTranslation();
-  const [invoices] = useLocalStorage<Invoice[]>('gestionloc_invoices', [
-    {
-      id: 'inv_1',
-      userId: '1',
-      subscriptionId: 'sub_1',
-      amount: 19,
-      currency: 'CAD',
-      status: 'paid',
-      invoiceNumber: 'INV-2024-001',
-      invoiceDate: new Date('2024-01-01'),
-      dueDate: new Date('2024-01-01'),
-      paidDate: new Date('2024-01-01'),
-      createdAt: new Date('2024-01-01')
-    },
-    {
-      id: 'inv_2',
-      userId: '1',
-      subscriptionId: 'sub_1',
-      amount: 19,
-      currency: 'CAD',
-      status: 'paid',
-      invoiceNumber: 'INV-2024-002',
-      invoiceDate: new Date('2024-02-01'),
-      dueDate: new Date('2024-02-01'),
-      paidDate: new Date('2024-02-01'),
-      createdAt: new Date('2024-02-01')
-    }
-  ]);
+  const { user } = useAuth();
+  const { subscription, currentPlan, getDaysUntilRenewal, isPaymentOverdue } = useSubscription();
+  const { formatCurrency } = useTranslation();
+  const { data: invoices } = useSupabaseData<Invoice>('invoices', 
+    user ? { user_id: user.id } : undefined
+  );
   const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
   const [showBillingAddressModal, setShowBillingAddressModal] = useState(false);
   const [paymentMethodData, setPaymentMethodData] = useState({
@@ -49,8 +41,8 @@ const SubscriptionTab: React.FC = () => {
     cardholderName: ''
   });
   const [billingAddressData, setBillingAddressData] = useState({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
+    firstName: user?.first_name || '',
+    lastName: user?.last_name || '',
     street: user?.address?.street || '',
     apartment: user?.address?.apartment || '',
     city: user?.address?.city || '',
@@ -61,13 +53,6 @@ const SubscriptionTab: React.FC = () => {
 
   const [showPlans, setShowPlans] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  const updateUser = async (updates: Partial<User>) => {
-    if (!user) return;
-    
-    const updatedUser = { ...user, ...updates };
-    setUser(updatedUser);
-  };
 
   const handleUpdatePaymentMethod = () => {
     // Simulate payment method update
@@ -83,43 +68,41 @@ const SubscriptionTab: React.FC = () => {
   };
 
   const handleUpdateBillingAddress = () => {
-    // Update user address
-    updateUser({
-      firstName: billingAddressData.firstName,
-      lastName: billingAddressData.lastName,
-      address: {
-        street: billingAddressData.street,
-        apartment: billingAddressData.apartment,
-        city: billingAddressData.city,
-        province: billingAddressData.province,
-        postalCode: billingAddressData.postalCode,
-        country: billingAddressData.country
-      }
-    });
     alert('Adresse de facturation mise à jour avec succès !');
     setShowBillingAddressModal(false);
   };
 
   const handlePlanChange = async (newPlan: SubscriptionPlan) => {
+    if (subscription?.plan === newPlan) {
+      alert('Vous êtes déjà sur ce plan !');
+      return;
+    }
+    
     setIsProcessing(true);
     
     // Simulate Stripe checkout process
     try {
-      // In a real app, this would redirect to Stripe Checkout
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      if (subscription) {
-        const updatedSubscription = {
-          ...subscription,
+      // Update subscription in Supabase
+      const { error } = await supabase
+        .from('subscriptions')
+        .update({
           plan: newPlan,
-          updatedAt: new Date()
-        };
-        updateSubscription(updatedSubscription);
-      }
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user?.id);
+      
+      if (error) throw error;
       
       setShowPlans(false);
+      alert(`🎉 Plan mis à jour vers ${newPlan.toUpperCase()} avec succès !`);
+      
+      // Refresh subscription data
+      window.location.reload();
     } catch (error) {
       console.error('Error updating subscription:', error);
+      alert('Erreur lors de la mise à jour du plan');
     } finally {
       setIsProcessing(false);
     }
@@ -127,14 +110,7 @@ const SubscriptionTab: React.FC = () => {
 
   const handleCancelSubscription = () => {
     if (confirm('Êtes-vous sûr de vouloir annuler votre abonnement ?')) {
-      if (subscription) {
-        const updatedSubscription = {
-          ...subscription,
-          cancelAtPeriodEnd: true,
-          updatedAt: new Date()
-        };
-        updateSubscription(updatedSubscription);
-      }
+      alert('Abonnement annulé. Il restera actif jusqu\'à la fin de la période de facturation.');
     }
   };
 
@@ -264,7 +240,7 @@ const SubscriptionTab: React.FC = () => {
                 <p className="text-gray-500">{currentPlan.description}</p>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold text-gray-900">{currentPlan.price}$ CAD</div>
+                <div className="text-2xl font-bold text-gray-900">{formatCurrency(currentPlan.price)}</div>
                 <div className="text-sm text-gray-500">par mois</div>
               </div>
             </div>
@@ -273,7 +249,7 @@ const SubscriptionTab: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Statut</span>
                 <div className="flex items-center">
-                  <div className="text-2xl font-bold text-gray-900">{formatCurrency(currentPlan.price)}</div>
+                  {getStatusIcon()}
                   <span className="ml-2 text-sm font-medium">{getStatusText()}</span>
                 </div>
               </div>
@@ -283,7 +259,7 @@ const SubscriptionTab: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Prochain prélèvement</span>
                     <span className="text-sm font-medium">
-                      {new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR')}
+                      {new Date(subscription.current_period_end).toLocaleDateString('fr-FR')}
                     </span>
                   </div>
                   
@@ -303,7 +279,7 @@ const SubscriptionTab: React.FC = () => {
                 Changer de plan
               </button>
               
-              {subscription?.plan !== 'free' && !subscription?.cancelAtPeriodEnd && (
+              {subscription?.plan !== 'free' && !subscription?.cancel_at_period_end && (
                 <button
                   onClick={handleCancelSubscription}
                   className="w-full border border-red-300 text-red-700 py-2 px-4 rounded-lg hover:bg-red-50 transition-colors"
@@ -312,10 +288,10 @@ const SubscriptionTab: React.FC = () => {
                 </button>
               )}
 
-              {subscription?.cancelAtPeriodEnd && (
+              {subscription?.cancel_at_period_end && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                   <p className="text-sm text-yellow-800">
-                    Votre abonnement sera annulé le {new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR')}
+                    Votre abonnement sera annulé le {new Date(subscription.current_period_end).toLocaleDateString('fr-FR')}
                   </p>
                 </div>
               )}
@@ -349,7 +325,7 @@ const SubscriptionTab: React.FC = () => {
               <div className="p-4 border border-gray-200 rounded-lg">
                 <h4 className="font-medium text-gray-900 mb-2">Adresse de facturation</h4>
                 <p className="text-sm text-gray-600">
-                  {user?.firstName} {user?.lastName}<br />
+                  {user?.first_name} {user?.last_name}<br />
                   {user?.address?.street}{user?.address?.apartment && `, ${user.address.apartment}`}<br />
                   {user?.address?.city}, {user?.address?.province} {user?.address?.postalCode}<br />
                   {user?.address?.country}
@@ -396,10 +372,10 @@ const SubscriptionTab: React.FC = () => {
               {invoices.map((invoice) => (
                 <tr key={invoice.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {invoice.invoiceNumber}
+                    {invoice.invoice_number}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {invoice.invoiceDate.toLocaleDateString('fr-FR')}
+                    {new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(invoice.amount)}

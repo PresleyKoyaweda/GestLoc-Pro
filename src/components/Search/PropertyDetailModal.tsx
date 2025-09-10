@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { X, MapPin, Bed, Bath, Square, Calendar, Clock, User, Eye, Home } from 'lucide-react';
+import { X, MapPin, Bed, Bath, Square, Calendar, Clock, User, Eye, Home, Wrench } from 'lucide-react';
 import { Property, Unit, VisitSlot, VisitRequest } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useVisitRequests } from '../../hooks/useVisitRequests';
+import { usePropertyRequests } from '../../hooks/usePropertyRequests';
+import { useTenants } from '../../hooks/useTenants';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../hooks/useNotifications';
+import { usePropertyEquipment } from '../../hooks/usePropertyEquipment';
 import VisitRequestForm from './VisitRequestForm';
 
 interface PropertyDetailModalProps {
@@ -20,14 +23,15 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   onJoinProperty 
 }) => {
   const { user } = useAuth();
-  const [visitRequests, setVisitRequests] = useLocalStorage<VisitRequest[]>('gestionloc_visit_requests', []);
-  const { addNotification } = useNotifications(property.ownerId);
-  const [requests] = useLocalStorage('gestionloc_requests', []);
-  const [tenants] = useLocalStorage('gestionloc_tenants', []);
+  const { visitRequests } = useVisitRequests();
+  const { requests } = usePropertyRequests();
+  const { tenants } = useTenants();
+  const { addNotification } = useNotifications();
+  const { equipment } = usePropertyEquipment(property.id);
   const [showVisitRequestForm, setShowVisitRequestForm] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
 
-  const availableUnits = units.filter(unit => unit.status === 'available');
+  const availableUnits = units.filter(unit => unit.status === 'libre');
 
   const handleVisitRequest = (unit?: Unit) => {
     setSelectedUnit(unit || null);
@@ -36,25 +40,25 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
 
   const hasUserVisitRequest = (property: Property, unit?: Unit) => {
     return visitRequests.some(req => 
-      req.tenantId === user?.id &&
-      req.propertyId === property.id &&
-      (unit ? req.unitId === unit.id : !req.unitId) &&
+      req.tenant_id === user?.id &&
+      req.property_id === property.id &&
+      (unit ? req.unit_id === unit.id : !req.unit_id) &&
       (req.status === 'confirmed' || req.status === 'completed')
     );
   };
 
   const hasUserRequested = (property: Property, unit?: Unit) => {
     return requests.some(req => 
-      req.tenantId === user?.id &&
-      ((unit && req.unitId === unit.id) || (!unit && req.propertyId === property.id))
+      req.tenant_id === user?.id &&
+      ((unit && req.unit_id === unit.id) || (!unit && req.property_id === property.id))
     );
   };
 
   const isUserTenant = (property: Property, unit?: Unit) => {
     return tenants.some(tenant => 
-      tenant.userId === user?.id &&
-      tenant.propertyId === property.id &&
-      (unit ? tenant.unitId === unit.id : !tenant.unitId)
+      tenant.user_id === user?.id &&
+      tenant.property_id === property.id &&
+      (unit ? tenant.unit_id === unit.id : !tenant.unit_id)
     );
   };
 
@@ -68,8 +72,8 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
 
   const getRequestStatus = (property: Property, unit?: Unit) => {
     const request = requests.find(req => 
-      req.tenantId === user?.id &&
-      ((unit && req.unitId === unit.id) || (!unit && req.propertyId === property.id))
+      req.tenant_id === user?.id &&
+      ((unit && req.unit_id === unit.id) || (!unit && req.property_id === property.id))
     );
     return request?.status;
   };
@@ -159,59 +163,85 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Equipment and Amenities */}
+          {/* Equipment */}
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Équipements et commodités</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Property Equipment */}
-              {property.equipment && property.equipment.length > 0 && (
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-3">Équipements du logement</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {property.equipment.map((item, index) => (
-                      <div key={index} className="flex items-center text-sm text-gray-600">
-                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2" />
-                        {item}
-                      </div>
-                    ))}
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <Wrench className="w-5 h-5 mr-2" />
+              Équipements inclus ({equipment.length})
+            </h3>
+            
+            {equipment.length === 0 ? (
+              <div className="text-center py-8 bg-gray-50 rounded-lg">
+                <Wrench className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500">Aucun équipement spécifié</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {equipment.map((item) => (
+                  <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">{item.name}</h4>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        item.condition === 'excellent' ? 'bg-green-100 text-green-800' :
+                        item.condition === 'good' ? 'bg-blue-100 text-blue-800' :
+                        item.condition === 'fair' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {item.condition === 'excellent' ? 'Excellent' :
+                         item.condition === 'good' ? 'Bon' :
+                         item.condition === 'fair' ? 'Correct' : 'Mauvais'}
+                      </span>
+                    </div>
+                    {item.description && (
+                      <p className="text-sm text-gray-600 mb-2">{item.description}</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 capitalize">{item.category}</span>
+                      {item.included_in_rent && (
+                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                          Inclus
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* Common Areas for shared properties */}
-              {property.type === 'shared' && property.commonAreas && (
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-3">Espaces communs</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(property.commonAreas).map(([key, value]) => {
-                      if (!value) return null;
-                      const labels = {
-                        kitchen: 'Cuisine',
-                        fridge: 'Réfrigérateur',
-                        microwave: 'Micro-ondes',
-                        oven: 'Four',
-                        dishwasher: 'Lave-vaisselle',
-                        bathroom: 'Salle de bain',
-                        laundry: 'Buanderie',
-                        livingRoom: 'Salon',
-                        wifi: 'WiFi',
-                        parking: 'Parking',
-                        balcony: 'Balcon',
-                        garden: 'Jardin',
-                        storage: 'Rangement'
-                      };
-                      return (
-                        <div key={key} className="flex items-center text-sm text-gray-600">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2" />
-                          {labels[key as keyof typeof labels]}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Common Areas for shared properties */}
+          {property.type === 'shared' && property.commonAreas && (
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Espaces communs</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {Object.entries(property.commonAreas).map(([key, value]) => {
+                  if (!value) return null;
+                  const labels = {
+                    kitchen: 'Cuisine',
+                    fridge: 'Réfrigérateur',
+                    microwave: 'Micro-ondes',
+                    oven: 'Four',
+                    dishwasher: 'Lave-vaisselle',
+                    bathroom: 'Salle de bain',
+                    laundry: 'Buanderie',
+                    livingRoom: 'Salon',
+                    wifi: 'WiFi',
+                    parking: 'Parking',
+                    balcony: 'Balcon',
+                    garden: 'Jardin',
+                    storage: 'Rangement'
+                  };
+                  return (
+                    <div key={key} className="flex items-center text-sm text-gray-600">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-2" />
+                      {labels[key as keyof typeof labels]}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Units for shared properties */}
           {property.type === 'shared' && (
             <div className="mb-8">

@@ -1,29 +1,28 @@
 import React, { useState } from 'react';
 import { Check, X, User, Mail, Phone, FileText, MessageSquare, Calendar, AlertCircle } from 'lucide-react';
-import { PropertyRequest, Property, Unit, Tenant } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { useNotifications } from '../../hooks/useNotifications';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
+import { usePropertyRequests } from '../../hooks/usePropertyRequests';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { useTenants } from '../../hooks/useTenants';
+import { supabase } from '../../lib/supabase';
 
 const PropertyRequestsTab: React.FC = () => {
-  const [requests, setRequests] = useLocalStorage<PropertyRequest[]>('gestionloc_requests', []);
-  const [properties, setProperties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units, setUnits] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [tenants, setTenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
-  const { addNotification } = useNotifications('1');
-  const { addHistoryEntry } = useTenantHistory();
+  const { requests, loading, acceptRequest, rejectRequest } = usePropertyRequests();
+  const { properties, updateProperty } = useProperties();
+  const { units, updateUnit } = useUnits();
+  const { addTenant } = useTenants();
   const [filter, setFilter] = useState<'all' | 'en_attente' | 'acceptee' | 'rejetee'>('en_attente');
 
   const pendingRequests = requests.filter(req => req.status === 'en_attente');
   const filteredRequests = requests.filter(req => filter === 'all' || req.status === filter);
 
-  const getPropertyInfo = (request: PropertyRequest) => {
-    const property = properties.find(p => p.id === request.propertyId);
-    const unit = request.unitId ? units.find(u => u.id === request.unitId) : null;
+  const getPropertyInfo = (request: any) => {
+    const property = properties.find(p => p.id === request.property_id);
+    const unit = request.unit_id ? units.find(u => u.id === request.unit_id) : null;
     return { property, unit };
   };
 
-  const handleAcceptRequest = (request: PropertyRequest) => {
+  const handleAcceptRequest = async (request: any) => {
     const { property, unit } = getPropertyInfo(request);
     if (!property) return;
 
@@ -31,123 +30,57 @@ const PropertyRequestsTab: React.FC = () => {
       return;
     }
 
+    try {
+      // Update request status
+      await acceptRequest(request.id);
 
-    // Update request status
-    setRequests(prev => prev.map(req => 
-      req.id === request.id 
-        ? { ...req, status: 'acceptee' as const, responseDate: new Date() }
-        : req
-    ));
+      // Create tenant
+      const newTenant = {
+        user_id: request.tenant_id,
+        property_id: property.id,
+        unit_id: unit?.id,
+        lease_start: new Date().toISOString().split('T')[0],
+        lease_end: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1 year lease
+        monthly_rent: unit?.rent || property.rent || 0,
+        deposit_paid: 0,
+        payment_due_date: 1,
+        emergency_contact: {
+          name: '',
+          phone: '',
+          relationship: '',
+        },
+        status: 'active'
+      };
 
+      await addTenant(newTenant);
 
-    // Create tenant
-    const newTenant: Tenant = {
-      id: Date.now().toString(),
-      userId: request.tenantId,
-      propertyId: property.id,
-      unitId: unit?.id,
-      leaseStart: new Date(),
-      leaseEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year lease
-      monthlyRent: unit?.rent || property.rent || 0,
-      depositPaid: 0,
-      paymentDueDate: 1,
-      emergencyContact: {
-        name: '',
-        phone: '',
-        relationship: '',
-      },
-    };
+      // Update property/unit status to occupied
+      if (unit) {
+        await updateUnit(unit.id, { status: 'occupe' });
+      } else {
+        await updateProperty(property.id, { status: 'occupe' });
+      }
 
-    // Add tenant
-    setTenants(prev => [...prev, newTenant]);
+      // Send notification via Supabase function
+      await supabase.rpc('create_notification', {
+        target_user_id: request.tenant_id,
+        notification_type: 'general',
+        notification_title: '🎉 DEMANDE ACCEPTÉE - Bienvenue chez vous !',
+        notification_message: `Félicitations ! Votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} - ${property.name} a été acceptée.`,
+        notification_data: {
+          property_id: property.id,
+          unit_id: unit?.id
+        }
+      });
 
-    // Update property/unit status to occupied
-    if (unit) {
-      setUnits(prev => prev.map(u => 
-        u.id === unit.id 
-          ? { ...u, status: 'occupied' as const }
-          : u
-      ));
-    } else {
-      setProperties(prev => prev.map(p => 
-        p.id === property.id 
-          ? { ...p, status: 'occupe' as const }
-          : p
-      ));
+      alert('🎉 Demande acceptée ! Un message de bienvenue a été envoyé au locataire.');
+    } catch (error) {
+      console.error('Error accepting request:', error);
+      alert('Erreur lors de l\'acceptation de la demande');
     }
-
-    // Generate formal AI acceptance message
-    const welcomeMessage = `
-Cher(e) ${request.tenantInfo.firstName} ${request.tenantInfo.lastName},
-
-🎉 Félicitations ! Nous avons le grand plaisir de vous informer que votre demande de logement a été ACCEPTÉE.
-
-🏠 Votre nouveau logement :
-${unit ? `Chambre ${unit.name}` : 'Logement entier'} - ${property.name}
-📍 ${property.address.street}, ${property.address.city}
-💰 Loyer mensuel : ${newTenant.monthlyRent}$ CAD
-📅 Début du bail : ${newTenant.leaseStart.toLocaleDateString('fr-FR')}
-📅 Fin du bail : ${newTenant.leaseEnd.toLocaleDateString('fr-FR')}
-
-📋 Prochaines étapes :
-1. ✅ Votre espace locataire est maintenant activé
-2. 📄 Vous pouvez accéder à "Mon logement" dans votre tableau de bord
-3. 💳 Les paiements mensuels seront générés automatiquement
-4. 🔧 Vous pouvez signaler des problèmes directement via l'application
-5. 📞 Contactez-nous pour toute question
-
-📞 Informations de contact :
-• Application : Section "Mon logement"
-• Support : Via l'onglet "Mes signalements"
-
-Nous vous souhaitons la bienvenue dans votre nouveau logement et espérons que vous vous y plairez !
-
-Cordialement,
-L'équipe GestionLoc Pro
-    `.trim();
-
-    addNotification({
-      userId: request.tenantId,
-      type: 'general',
-      title: '🎉 DEMANDE ACCEPTÉE - Bienvenue chez vous !',
-      message: welcomeMessage,
-      read: false,
-    });
-
-    // Add to tenant history
-    addHistoryEntry({
-      type: 'lease_signed',
-      title: `Bail signé - ${property.name}`,
-      description: `Votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} a été acceptée et un bail a été créé`,
-      propertyId: property.id,
-      unitId: unit?.id,
-      relatedId: newTenant.id,
-      metadata: {
-        status: 'accepted',
-        monthlyRent: newTenant.monthlyRent,
-        leaseStart: newTenant.leaseStart.toISOString(),
-        leaseEnd: newTenant.leaseEnd.toISOString()
-      }
-    });
-    
-    // Add move-in history entry
-    addHistoryEntry({
-      type: 'move_in',
-      title: `Emménagement - ${property.name}`,
-      description: `Emménagement dans ${unit ? `la chambre ${unit.name}` : 'le logement entier'}`,
-      propertyId: property.id,
-      unitId: unit?.id,
-      relatedId: newTenant.id,
-      metadata: {
-        moveInDate: newTenant.leaseStart.toISOString(),
-        monthlyRent: newTenant.monthlyRent
-      }
-    });
-    console.log('🔔 Notification sent to tenant');
-    alert('🎉 Demande acceptée ! Un message de bienvenue détaillé a été envoyé au locataire.');
   };
 
-  const handleRejectRequest = (request: PropertyRequest) => {
+  const handleRejectRequest = async (request: any) => {
     const { property, unit } = getPropertyInfo(request);
     if (!property) return;
 
@@ -155,79 +88,50 @@ L'équipe GestionLoc Pro
       return;
     }
 
+    try {
+      // Update request status
+      await rejectRequest(request.id);
 
-    // Update request status
-    setRequests(prev => prev.map(req => 
-      req.id === request.id 
-        ? { ...req, status: 'rejetee' as const, responseDate: new Date() }
-        : req
-    ));
-
-
-    // Update property/unit status back to available
-    if (unit) {
-      setUnits(prev => prev.map(u => 
-        u.id === unit.id 
-          ? { ...u, status: 'available' as const }
-          : u
-      ));
-    } else {
-      setProperties(prev => prev.map(p => 
-        p.id === property.id 
-          ? { ...p, status: 'libre' as const }
-          : p
-      ));
-    }
-
-    // Generate formal AI rejection message
-    const rejectionMessage = `
-Cher(e) ${request.tenantInfo.firstName} ${request.tenantInfo.lastName},
-
-Nous vous remercions de l'intérêt que vous avez porté à ${unit ? `la chambre ${unit.name}` : 'notre logement'} situé au ${property.name}.
-
-Après examen attentif de votre dossier, nous regrettons de vous informer que nous ne pouvons pas donner suite favorable à votre demande pour ce logement spécifique.
-
-Cette décision peut être due à :
-• Un grand nombre de candidatures reçues
-• Des critères spécifiques pour ce logement
-• Une sélection basée sur l'ordre d'arrivée des dossiers complets
-
-🔍 Nous vous encourageons vivement à :
-• Consulter nos autres logements disponibles
-• Programmer de nouvelles visites
-• Soumettre de nouvelles demandes
-
-Votre profil reste actif dans notre système et vous pouvez continuer à rechercher d'autres opportunités via l'application GestionLoc Pro.
-
-Nous vous souhaitons bonne chance dans vos recherches et espérons pouvoir vous accompagner prochainement.
-
-Cordialement,
-L'équipe GestionLoc Pro
-    `.trim();
-
-    addNotification({
-      userId: request.tenantId,
-      type: 'general',
-      title: '📋 Réponse à votre demande de logement',
-      message: rejectionMessage,
-      read: false,
-    });
-
-    // Add to tenant history
-    addHistoryEntry({
-      type: 'property_request',
-      title: `Demande refusée - ${property.name}`,
-      description: `Votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} a été refusée`,
-      propertyId: property.id,
-      unitId: unit?.id,
-      relatedId: request.id,
-      metadata: {
-        status: 'rejected'
+      // Update property/unit status back to available
+      if (unit) {
+        await updateUnit(unit.id, { status: 'libre' });
+      } else {
+        await updateProperty(property.id, { status: 'libre' });
       }
-    });
-    console.log('🔔 Notification sent to tenant');
-    alert('📋 Demande refusée. Un message professionnel a été envoyé au locataire.');
+
+      // Send notification via Supabase function
+      await supabase.rpc('create_notification', {
+        target_user_id: request.tenant_id,
+        notification_type: 'general',
+        notification_title: '📋 Réponse à votre demande de logement',
+        notification_message: `Nous regrettons de vous informer que votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} - ${property.name} n'a pas pu être acceptée.`,
+        notification_data: {
+          property_id: property.id,
+          unit_id: unit?.id
+        }
+      });
+
+      alert('📋 Demande refusée. Un message a été envoyé au locataire.');
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      alert('Erreur lors du refus de la demande');
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="space-y-4">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -285,7 +189,7 @@ L'équipe GestionLoc Pro
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
                       <h3 className="text-lg font-semibold text-gray-900">
-                        {request.tenantInfo.firstName} {request.tenantInfo.lastName}
+                        {request.tenant_info.firstName} {request.tenant_info.lastName}
                       </h3>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         request.status === 'en_attente' ? 'bg-orange-100 text-orange-800' :
@@ -300,15 +204,15 @@ L'équipe GestionLoc Pro
                     <div className="text-sm text-gray-600 space-y-1">
                       <div className="flex items-center">
                         <Mail className="w-4 h-4 mr-2" />
-                        {request.tenantInfo.email}
+                        {request.tenant_info.email}
                       </div>
                       <div className="flex items-center">
                         <Phone className="w-4 h-4 mr-2" />
-                        {request.tenantInfo.phone}
+                        {request.tenant_info.phone}
                       </div>
                       <div className="flex items-center">
                         <Calendar className="w-4 h-4 mr-2" />
-                        Demande envoyée le {new Date(request.requestDate).toLocaleDateString('fr-FR')}
+                        Demande envoyée le {new Date(request.request_date).toLocaleDateString('fr-FR')}
                       </div>
                     </div>
                   </div>
@@ -316,24 +220,14 @@ L'équipe GestionLoc Pro
                   {request.status === 'en_attente' && (
                     <div className="flex space-x-2 ml-4">
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('🟢 Accept button clicked for request:', request.id);
-                          handleAcceptRequest(request);
-                        }}
+                        onClick={() => handleAcceptRequest(request)}
                         className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                       >
                         <Check className="w-4 h-4 mr-1" />
                         Accepter
                       </button>
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('🔴 Reject button clicked for request:', request.id);
-                          handleRejectRequest(request);
-                        }}
+                        onClick={() => handleRejectRequest(request)}
                         className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                       >
                         <X className="w-4 h-4 mr-1" />
@@ -349,7 +243,7 @@ L'équipe GestionLoc Pro
                     {unit ? `Chambre ${unit.name}` : 'Logement entier'} - {property?.name}
                   </h4>
                   <p className="text-sm text-blue-800">
-                    {property?.address.street}, {property?.address.city}
+                    {property?.address?.street}, {property?.address?.city}
                   </p>
                   {unit && (
                     <div className="flex items-center space-x-4 text-sm text-blue-700 mt-2">
@@ -360,22 +254,22 @@ L'équipe GestionLoc Pro
                 </div>
 
                 {/* Message */}
-                {request.tenantInfo.message && (
+                {request.tenant_info.message && (
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
                     <h4 className="font-medium text-gray-900 mb-2 flex items-center">
                       <MessageSquare className="w-4 h-4 mr-2" />
                       Message du candidat
                     </h4>
-                    <p className="text-sm text-gray-700">{request.tenantInfo.message}</p>
+                    <p className="text-sm text-gray-700">{request.tenant_info.message}</p>
                   </div>
                 )}
 
                 {/* ID Document */}
-                {request.tenantInfo.idDocument && (
+                {request.tenant_info.idDocument && (
                   <div className="flex items-center text-sm text-gray-600">
                     <FileText className="w-4 h-4 mr-2" />
                     <button 
-                      onClick={() => window.open(request.tenantInfo.idDocument, '_blank')}
+                      onClick={() => window.open(request.tenant_info.idDocument, '_blank')}
                       className="text-blue-600 hover:text-blue-800"
                     >
                       Voir la pièce d'identité
@@ -384,9 +278,9 @@ L'équipe GestionLoc Pro
                 )}
 
                 {/* Response Date */}
-                {request.responseDate && (
+                {request.response_date && (
                   <div className="mt-4 pt-4 border-t border-gray-200 text-sm text-gray-500">
-                    Réponse envoyée le {new Date(request.responseDate).toLocaleDateString('fr-FR')}
+                    Réponse envoyée le {new Date(request.response_date).toLocaleDateString('fr-FR')}
                   </div>
                 )}
               </div>

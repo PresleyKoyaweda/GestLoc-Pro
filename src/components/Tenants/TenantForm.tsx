@@ -1,89 +1,90 @@
 import React, { useState } from 'react';
 import { Plus, X, User, Mail, Phone, Calendar, DollarSign } from 'lucide-react';
-import { Tenant, Property, Unit } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useTenants } from '../../hooks/useTenants';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 
 interface TenantFormProps {
   onClose: () => void;
-  tenant?: Tenant;
+  tenant?: any;
 }
 
 const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
   const { user } = useAuth();
-  const [tenants, setTenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
+  const { addTenant, updateTenant } = useTenants();
+  const { properties } = useProperties();
+  const { units } = useUnits();
   const { canAddTenant } = useSubscription();
   
   const [formData, setFormData] = useState({
-    userId: tenant?.userId || '',
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    propertyId: tenant?.propertyId || '',
-    unitId: tenant?.unitId || '',
-    leaseStart: tenant?.leaseStart ? new Date(tenant.leaseStart).toISOString().split('T')[0] : '',
-    leaseEnd: tenant?.leaseEnd ? new Date(tenant.leaseEnd).toISOString().split('T')[0] : '',
-    monthlyRent: tenant?.monthlyRent || 0,
-    depositPaid: tenant?.depositPaid || 0,
-    paymentDueDate: tenant?.paymentDueDate || 1,
-    emergencyContact: {
-      name: tenant?.emergencyContact?.name || '',
-      phone: tenant?.emergencyContact?.phone || '',
-      relationship: tenant?.emergencyContact?.relationship || '',
+    user_id: tenant?.user_id || '',
+    property_id: tenant?.property_id || '',
+    unit_id: tenant?.unit_id || '',
+    lease_start: tenant?.lease_start ? new Date(tenant.lease_start).toISOString().split('T')[0] : '',
+    lease_end: tenant?.lease_end ? new Date(tenant.lease_end).toISOString().split('T')[0] : '',
+    monthly_rent: tenant?.monthly_rent || 0,
+    deposit_paid: tenant?.deposit_paid || 0,
+    payment_due_date: tenant?.payment_due_date || 1,
+    emergency_contact: {
+      name: tenant?.emergency_contact?.name || '',
+      phone: tenant?.emergency_contact?.phone || '',
+      relationship: tenant?.emergency_contact?.relationship || '',
     }
   });
 
-  const selectedProperty = properties.find(p => p.id === formData.propertyId);
-  const availableUnits = units.filter(u => u.propertyId === formData.propertyId && u.status === 'available');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const selectedProperty = properties.find(p => p.id === formData.property_id);
+  const availableUnits = units.filter(u => u.property_id === formData.property_id && u.status === 'libre');
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     
-    // Validation
-    if (!formData.propertyId) {
-      alert('Veuillez sélectionner une propriété.');
-      return;
-    }
-    
-    if (selectedProperty?.type === 'shared' && !formData.unitId) {
-      alert('Veuillez sélectionner une chambre pour cette colocation.');
-      return;
-    }
-    
-    if (new Date(formData.leaseEnd) <= new Date(formData.leaseStart)) {
-      alert('La date de fin du bail doit être postérieure à la date de début.');
-      return;
-    }
-    
-    if (!tenant && !canAddTenant(tenants.length)) {
-      alert('Vous avez atteint la limite de locataires pour votre plan. Veuillez mettre à niveau votre abonnement.');
-      return;
-    }
-    
-    const tenantData: Tenant = {
-      id: tenant?.id || Date.now().toString(),
-      userId: user?.id || '1', // Temporary - should be actual tenant user ID
-      propertyId: formData.propertyId || undefined,
-      unitId: formData.unitId || undefined,
-      leaseStart: new Date(formData.leaseStart),
-      leaseEnd: new Date(formData.leaseEnd),
-      monthlyRent: formData.monthlyRent,
-      depositPaid: formData.depositPaid,
-      paymentDueDate: formData.paymentDueDate,
-      emergencyContact: formData.emergencyContact,
-    };
+    try {
+      // Validation
+      if (!formData.property_id) {
+        alert('Veuillez sélectionner une propriété.');
+        return;
+      }
+      
+      if (selectedProperty?.type === 'shared' && !formData.unit_id) {
+        alert('Veuillez sélectionner une chambre pour cette colocation.');
+        return;
+      }
+      
+      if (new Date(formData.lease_end) <= new Date(formData.lease_start)) {
+        alert('La date de fin du bail doit être postérieure à la date de début.');
+        return;
+      }
+      
+      if (!tenant && !canAddTenant(0)) { // We'll get the actual count from the hook
+        alert('Vous avez atteint la limite de locataires pour votre plan. Veuillez mettre à niveau votre abonnement.');
+        return;
+      }
+      
+      const tenantData = {
+        ...formData,
+        lease_start: formData.lease_start,
+        lease_end: formData.lease_end,
+        status: 'active'
+      };
 
-    if (tenant) {
-      setTenants(prev => prev.map(t => t.id === tenant.id ? tenantData : t));
-    } else {
-      setTenants(prev => [...prev, tenantData]);
+      if (tenant) {
+        await updateTenant(tenant.id, tenantData);
+      } else {
+        await addTenant(tenantData);
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Error saving tenant:', error);
+      alert('Erreur lors de la sauvegarde du locataire');
+    } finally {
+      setLoading(false);
     }
-    
-    onClose();
   };
 
   return (
@@ -101,60 +102,6 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Personal Information */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Informations personnelles</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Prénom *
-                </label>
-                <input
-                  type="text"
-                  value={formData.firstName}
-                  onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nom *
-                </label>
-                <input
-                  type="text"
-                  value={formData.lastName}
-                  onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Téléphone
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Property Assignment */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4">Logement</h3>
@@ -164,8 +111,8 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                   Propriété *
                 </label>
                 <select
-                  value={formData.propertyId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, propertyId: e.target.value, unitId: '' }))}
+                  value={formData.property_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, property_id: e.target.value, unit_id: '' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -184,15 +131,15 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                     Chambre *
                   </label>
                   <select
-                    value={formData.unitId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, unitId: e.target.value }))}
+                    value={formData.unit_id}
+                    onChange={(e) => setFormData(prev => ({ ...prev, unit_id: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
                     <option value="">Sélectionner une chambre</option>
                     {availableUnits.map(unit => (
                       <option key={unit.id} value={unit.id}>
-                        {unit.name} - {unit.rent}€/mois
+                        {unit.name} - {unit.rent}$/mois
                       </option>
                     ))}
                   </select>
@@ -211,8 +158,8 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 </label>
                 <input
                   type="date"
-                  value={formData.leaseStart}
-                  onChange={(e) => setFormData(prev => ({ ...prev, leaseStart: e.target.value }))}
+                  value={formData.lease_start}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lease_start: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -223,8 +170,8 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 </label>
                 <input
                   type="date"
-                  value={formData.leaseEnd}
-                  onChange={(e) => setFormData(prev => ({ ...prev, leaseEnd: e.target.value }))}
+                  value={formData.lease_end}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lease_end: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -235,8 +182,8 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 </label>
                 <input
                   type="number"
-                  value={formData.monthlyRent}
-                  onChange={(e) => setFormData(prev => ({ ...prev, monthlyRent: Number(e.target.value) }))}
+                  value={formData.monthly_rent}
+                  onChange={(e) => setFormData(prev => ({ ...prev, monthly_rent: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -247,8 +194,8 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 </label>
                 <input
                   type="number"
-                  value={formData.depositPaid}
-                  onChange={(e) => setFormData(prev => ({ ...prev, depositPaid: Number(e.target.value) }))}
+                  value={formData.deposit_paid}
+                  onChange={(e) => setFormData(prev => ({ ...prev, deposit_paid: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -257,8 +204,8 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                   Date d'échéance mensuelle
                 </label>
                 <select
-                  value={formData.paymentDueDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, paymentDueDate: Number(e.target.value) }))}
+                  value={formData.payment_due_date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, payment_due_date: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
@@ -279,10 +226,10 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 </label>
                 <input
                   type="text"
-                  value={formData.emergencyContact.name}
+                  value={formData.emergency_contact.name}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    emergencyContact: { ...prev.emergencyContact, name: e.target.value }
+                    emergency_contact: { ...prev.emergency_contact, name: e.target.value }
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -293,10 +240,10 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 </label>
                 <input
                   type="tel"
-                  value={formData.emergencyContact.phone}
+                  value={formData.emergency_contact.phone}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    emergencyContact: { ...prev.emergencyContact, phone: e.target.value }
+                    emergency_contact: { ...prev.emergency_contact, phone: e.target.value }
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -306,10 +253,10 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                   Relation
                 </label>
                 <select
-                  value={formData.emergencyContact.relationship}
+                  value={formData.emergency_contact.relationship}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    emergencyContact: { ...prev.emergencyContact, relationship: e.target.value }
+                    emergency_contact: { ...prev.emergency_contact, relationship: e.target.value }
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
@@ -330,14 +277,16 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
               type="button"
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={loading}
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={loading}
             >
-              {tenant ? 'Modifier' : 'Ajouter'}
+              {loading ? 'Sauvegarde...' : (tenant ? 'Modifier' : 'Ajouter')}
             </button>
           </div>
         </form>

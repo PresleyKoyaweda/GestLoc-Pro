@@ -4,7 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 
 export function useSupabaseData<T>(
   table: string,
-  filters?: Record<string, any>
+  filters?: Record<string, any>,
+  select?: string
 ) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,6 +14,7 @@ export function useSupabaseData<T>(
 
   const fetchData = async () => {
     if (!user) {
+      setData([]);
       setLoading(false);
       return;
     }
@@ -20,29 +22,27 @@ export function useSupabaseData<T>(
     try {
       setLoading(true);
       
-      try {
-        let query = supabase.from(table).select('*');
+      let query = supabase.from(table).select(select || '*');
       
-        // Appliquer les filtres
-        if (filters) {
-          Object.entries(filters).forEach(([key, value]) => {
+      // Appliquer les filtres
+      if (filters) {
+        Object.entries(filters).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
             query = query.eq(key, value);
-          });
-        }
-      
-        const { data: result, error } = await query;
-      
-        if (error) throw error;
-      
-        setData(result || []);
-        setError(null);
-      } catch (err) {
-        console.error(`Error fetching ${table}:`, err);
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        setData([]);
+          }
+        });
       }
+      
+      const { data: result, error } = await query;
+      
+      if (error) throw error;
+      
+      setData(result || []);
+      setError(null);
     } catch (err) {
-      console.error(`Error fetching ${table}:`, err);
+      console.warn(`⚠️ ${table}:`, err instanceof Error ? err.message : 'Erreur inconnue');
       setError(err instanceof Error ? err.message : 'Unknown error');
       setData([]);
     } finally {
@@ -51,11 +51,18 @@ export function useSupabaseData<T>(
   };
 
   useEffect(() => {
-    fetchData();
+    // Délai pour éviter les requêtes simultanées au démarrage
+    const timer = setTimeout(() => {
+      fetchData();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [user, table, JSON.stringify(filters)]);
 
   const insert = async (newItem: Partial<T>) => {
     try {
+      console.log(`📝 Inserting into ${table}:`, newItem);
+      
       const { data: result, error } = await supabase
         .from(table)
         .insert([newItem])
@@ -64,6 +71,7 @@ export function useSupabaseData<T>(
       
       if (error) throw error;
       
+      console.log(`✅ Successfully inserted into ${table}:`, result);
       setData(prev => [...prev, result]);
       return result;
     } catch (err) {
@@ -74,6 +82,8 @@ export function useSupabaseData<T>(
 
   const update = async (id: string, updates: Partial<T>) => {
     try {
+      console.log(`📝 Updating ${table} id ${id}:`, updates);
+      
       const { data: result, error } = await supabase
         .from(table)
         .update(updates)
@@ -83,6 +93,7 @@ export function useSupabaseData<T>(
       
       if (error) throw error;
       
+      console.log(`✅ Successfully updated ${table}:`, result);
       setData(prev => prev.map(item => 
         (item as any).id === id ? result : item
       ));
@@ -95,6 +106,8 @@ export function useSupabaseData<T>(
 
   const remove = async (id: string) => {
     try {
+      console.log(`🗑️ Deleting from ${table} id:`, id);
+      
       const { error } = await supabase
         .from(table)
         .delete()
@@ -102,6 +115,7 @@ export function useSupabaseData<T>(
       
       if (error) throw error;
       
+      console.log(`✅ Successfully deleted from ${table}`);
       setData(prev => prev.filter(item => (item as any).id !== id));
     } catch (err) {
       console.error(`Error deleting from ${table}:`, err);

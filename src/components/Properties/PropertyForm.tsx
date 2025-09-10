@@ -1,21 +1,22 @@
 import React, { useState } from 'react';
-import { Plus, X, Upload } from 'lucide-react';
-import { Property, PropertyType, Unit, CommonAreas } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { Plus, X, Upload, Wrench, Trash2 } from 'lucide-react';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTranslation } from '../../hooks/useTranslation';
+import { supabase } from '../../lib/supabase';
 
 interface PropertyFormProps {
   onClose: () => void;
-  property?: Property;
+  property?: any;
 }
 
 const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
   const { t, getCurrencySymbol } = useTranslation();
   const { user } = useAuth();
-  const [properties, setProperties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units, setUnits] = useLocalStorage<Unit[]>('gestionloc_units', []);
+  const { addProperty, updateProperty } = useProperties();
+  const { addUnit } = useUnits();
   const { canAddProperty } = useSubscription();
   
   const [formData, setFormData] = useState({
@@ -23,106 +24,149 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
     address: {
       street: property?.address?.street || '',
       apartment: property?.address?.apartment || '',
-      postalCode: property?.address?.postalCode || '',
+      postal_code: property?.address?.postal_code || '',
       city: property?.address?.city || '',
       province: property?.address?.province || '',
       country: property?.address?.country || 'Canada',
     },
-    type: property?.type || 'entire' as PropertyType,
-    totalRooms: property?.totalRooms || 1,
-    totalBathrooms: property?.totalBathrooms || 1,
-    totalArea: property?.totalArea || 0,
+    type: property?.type || 'entire',
+    total_rooms: property?.total_rooms || 1,
+    total_bathrooms: property?.total_bathrooms || 1,
+    total_area: property?.total_area || 0,
     description: property?.description || '',
     rent: property?.rent || 0,
-    monthlyMortgage: property?.monthlyMortgage || 0,
-    monthlyFixedCharges: property?.monthlyFixedCharges || 0,
-    purchasePrice: property?.purchasePrice || 0,
-    purchaseDate: property?.purchaseDate ? new Date(property.purchaseDate).toISOString().split('T')[0] : '',
   });
 
-  const [propertyUnits, setPropertyUnits] = useState<Omit<Unit, 'id' | 'propertyId' | 'createdAt'>[]>([
-    { name: '', area: 0, rent: 0, status: 'available', availabilitySlots: [], equipment: [] }
+  const [propertyUnits, setPropertyUnits] = useState<any[]>([
+    { name: '', area: 0, rent: 0, status: 'libre', equipment: [] }
   ]);
+  
+  const [equipmentList, setEquipmentList] = useState<any[]>([]);
 
-  const [commonAreas, setCommonAreas] = useState<CommonAreas>({
-    kitchen: false,
-    fridge: false,
-    microwave: false,
-    oven: false,
-    dishwasher: false,
-    bathroom: false,
-    laundry: false,
-    livingRoom: false,
-    wifi: false,
-    parking: false,
-    balcony: false,
-    garden: false,
-    storage: false,
-  });
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Check subscription limits for new properties
-    if (!property && !canAddProperty(properties.length)) {
-      alert('Vous avez atteint la limite de propriétés pour votre plan. Veuillez mettre à niveau votre abonnement.');
-      return;
+  // Load existing equipment if editing
+  React.useEffect(() => {
+    if (property?.id) {
+      loadPropertyEquipment();
     }
-    
-    const propertyData: Property = {
-      id: property?.id || Date.now().toString(),
-      ownerId: user?.id || '1',
-      name: formData.name,
-      address: formData.address,
-      type: formData.type,
-      totalRooms: formData.totalRooms,
-      totalBathrooms: formData.totalBathrooms,
-      totalArea: formData.totalArea,
-      description: formData.description,
-      images: [],
-      status: 'libre' as const,
-      rent: formData.type === 'entire' ? formData.rent : undefined,
-      equipment: [], // Can be enhanced later
-      commonAreas: formData.type === 'shared' ? commonAreas : undefined,
-      monthlyMortgage: formData.monthlyMortgage,
-      monthlyFixedCharges: formData.monthlyFixedCharges,
-      purchasePrice: formData.purchasePrice || undefined,
-      purchaseDate: formData.purchaseDate ? new Date(formData.purchaseDate) : undefined,
-      createdAt: property?.createdAt || new Date(),
-      updatedAt: new Date(),
-    };
+  }, [property]);
 
-    if (property) {
-      setProperties(prev => prev.map(p => p.id === property.id ? propertyData : p));
-    } else {
-      setProperties(prev => [...prev, propertyData]);
-      
-      // Add units if it's a shared property
-      if (formData.type === 'shared') {
-        const newUnits = propertyUnits.map(unit => ({
-          id: Date.now().toString() + Math.random(),
-          propertyId: propertyData.id,
-          name: unit.name,
-          area: unit.area,
-          rent: unit.rent,
-          status: 'available' as const,
-          availabilitySlots: [],
-          createdAt: new Date(),
-        }));
-        setUnits(prev => [...prev, ...newUnits]);
-      }
+  const loadPropertyEquipment = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('property_equipment')
+        .select('*')
+        .eq('property_id', property.id);
+
+      if (error) throw error;
+      setEquipmentList(data || []);
+    } catch (error) {
+      console.error('Error loading equipment:', error);
     }
-    
-    onClose();
   };
 
-  const addUnit = () => {
+  const addEquipment = () => {
+    setEquipmentList(prev => [...prev, {
+      category: 'other',
+      name: '',
+      description: '',
+      condition: 'good',
+      included_in_rent: true
+    }]);
+  };
+
+  const updateEquipment = (index: number, field: string, value: any) => {
+    setEquipmentList(prev => prev.map((item, i) => 
+      i === index ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const removeEquipment = (index: number) => {
+    setEquipmentList(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const saveEquipment = async (propertyId: string) => {
+    try {
+      // Supprimer les équipements existants
+      await supabase
+        .from('property_equipment')
+        .delete()
+        .eq('property_id', propertyId);
+
+      // Ajouter les nouveaux équipements
+      const equipmentToSave = equipmentList
+        .filter(eq => eq.name.trim())
+        .map(eq => ({
+          property_id: propertyId,
+          category: eq.category,
+          name: eq.name,
+          description: eq.description,
+          condition: eq.condition,
+          included_in_rent: eq.included_in_rent
+        }));
+
+      if (equipmentToSave.length > 0) {
+        const { error } = await supabase
+          .from('property_equipment')
+          .insert(equipmentToSave);
+
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error('Error saving equipment:', error);
+      throw error;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    try {
+      if (property) {
+        await updateProperty(property.id, formData);
+        await saveEquipment(property.id);
+      } else {
+        const newProperty = await addProperty(formData);
+        
+        // Save equipment for new property
+        if (newProperty) {
+          await saveEquipment(newProperty.id);
+        }
+        
+        // Add units if it's a shared property
+        if (formData.type === 'shared' && newProperty) {
+          for (const unit of propertyUnits) {
+            if (unit.name && unit.rent > 0) {
+              await addUnit({
+                property_id: newProperty.id,
+                name: unit.name,
+                area: unit.area,
+                rent: unit.rent,
+                status: 'libre',
+                equipment: unit.equipment || []
+              });
+            }
+          }
+        }
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Error saving property:', error);
+      alert('Erreur lors de la sauvegarde de la propriété');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddUnit = () => {
     setPropertyUnits(prev => [...prev, {
       name: '',
       area: 0,
       rent: 0,
-      status: 'available',
-      availabilitySlots: [],
+      status: 'libre',
       equipment: []
     }]);
   };
@@ -136,6 +180,25 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
       i === index ? { ...unit, [field]: value } : unit
     ));
   };
+
+  const equipmentCategories = [
+    { value: 'kitchen', label: 'Cuisine' },
+    { value: 'bathroom', label: 'Salle de bain' },
+    { value: 'laundry', label: 'Buanderie' },
+    { value: 'heating', label: 'Chauffage' },
+    { value: 'cooling', label: 'Climatisation' },
+    { value: 'security', label: 'Sécurité' },
+    { value: 'entertainment', label: 'Divertissement' },
+    { value: 'furniture', label: 'Mobilier' },
+    { value: 'other', label: 'Autre' },
+  ];
+
+  const conditionOptions = [
+    { value: 'excellent', label: 'Excellent' },
+    { value: 'good', label: 'Bon' },
+    { value: 'fair', label: 'Correct' },
+    { value: 'poor', label: 'Mauvais' },
+  ];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -154,7 +217,6 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Basic Information */}
           <div className="space-y-6">
-            {/* Property Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nom de la propriété *
@@ -211,10 +273,10 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
                   </label>
                   <input
                     type="text"
-                    value={formData.address.postalCode}
+                    value={formData.address.postal_code}
                     onChange={(e) => setFormData(prev => ({ 
                       ...prev, 
-                      address: { ...prev.address, postalCode: e.target.value }
+                      address: { ...prev.address, postal_code: e.target.value }
                     }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="H1A 1A1"
@@ -278,35 +340,35 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
               Type de logement *
             </label>
             <div className="grid grid-cols-2 gap-4">
-              <label className="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+              <label className={`flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                formData.type === 'entire' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+              }`}>
                 <input
                   type="radio"
                   name="type"
                   value="entire"
                   checked={formData.type === 'entire'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as PropertyType }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
                   className="sr-only"
                 />
-                <div className={`flex-1 text-center ${
-                  formData.type === 'entire' ? 'text-blue-700' : 'text-gray-700'
-                }`}>
+                <div className="flex-1 text-center">
                   <div className="text-2xl mb-2">🏠</div>
                   <div className="font-medium">Logement entier</div>
                   <div className="text-sm text-gray-500">Un seul locataire</div>
                 </div>
               </label>
-              <label className="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+              <label className={`flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                formData.type === 'shared' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+              }`}>
                 <input
                   type="radio"
                   name="type"
                   value="shared"
                   checked={formData.type === 'shared'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as PropertyType }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
                   className="sr-only"
                 />
-                <div className={`flex-1 text-center ${
-                  formData.type === 'shared' ? 'text-blue-700' : 'text-gray-700'
-                }`}>
+                <div className="flex-1 text-center">
                   <div className="text-2xl mb-2">🛏️</div>
                   <div className="font-medium">Colocation</div>
                   <div className="text-sm text-gray-500">Chambres séparées</div>
@@ -323,8 +385,8 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
                   Nombre de pièces
                 </label>
                 <select
-                  value={formData.totalRooms}
-                  onChange={(e) => setFormData(prev => ({ ...prev, totalRooms: Number(e.target.value) }))}
+                  value={formData.total_rooms}
+                  onChange={(e) => setFormData(prev => ({ ...prev, total_rooms: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value={1}>1½</option>
@@ -342,8 +404,8 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
               <input
                 type="number"
                 min="1"
-                value={formData.totalBathrooms}
-                onChange={(e) => setFormData(prev => ({ ...prev, totalBathrooms: Number(e.target.value) }))}
+                value={formData.total_bathrooms}
+                onChange={(e) => setFormData(prev => ({ ...prev, total_bathrooms: Number(e.target.value) }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -353,8 +415,8 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
               </label>
               <input
                 type="number"
-                value={formData.totalArea}
-                onChange={(e) => setFormData(prev => ({ ...prev, totalArea: Number(e.target.value) }))}
+                value={formData.total_area}
+                onChange={(e) => setFormData(prev => ({ ...prev, total_area: Number(e.target.value) }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -375,63 +437,6 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
             </div>
           )}
 
-          {/* Financial Information */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Informations financières</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Hypothèque mensuelle ($)
-                </label>
-                <input
-                  type="number"
-                  value={formData.monthlyMortgage}
-                  onChange={(e) => setFormData(prev => ({ ...prev, monthlyMortgage: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Charges fixes mensuelles ($)
-                </label>
-                <input
-                  type="number"
-                  value={formData.monthlyFixedCharges}
-                  onChange={(e) => setFormData(prev => ({ ...prev, monthlyFixedCharges: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Taxes municipales, assurance, frais de copropriété, etc.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Prix d'achat ($) - optionnel
-                </label>
-                <input
-                  type="number"
-                  value={formData.purchasePrice}
-                  onChange={(e) => setFormData(prev => ({ ...prev, purchasePrice: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date d'achat - optionnel
-                </label>
-                <input
-                  type="date"
-                  value={formData.purchaseDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, purchaseDate: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Units for shared property */}
           {formData.type === 'shared' && (
             <div>
@@ -439,7 +444,7 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
                 <h3 className="text-lg font-medium">Chambres</h3>
                 <button
                   type="button"
-                  onClick={addUnit}
+                  onClick={handleAddUnit}
                   className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -505,38 +510,6 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
                   </div>
                 </div>
               ))}
-
-              {/* Common Areas */}
-              <div className="mt-6">
-                <h4 className="font-medium mb-3">Espaces communs</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {Object.entries(commonAreas).map(([key, value]) => (
-                    <label key={key} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={value}
-                        onChange={(e) => setCommonAreas(prev => ({ ...prev, [key]: e.target.checked }))}
-                        className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm">
-                        {key === 'kitchen' && 'Cuisine'}
-                        {key === 'fridge' && 'Frigo'}
-                        {key === 'microwave' && 'Micro-ondes'}
-                        {key === 'oven' && 'Four'}
-                        {key === 'dishwasher' && 'Lave-vaisselle'}
-                        {key === 'bathroom' && 'Salle de bain'}
-                        {key === 'laundry' && 'Buanderie'}
-                        {key === 'livingRoom' && 'Salon'}
-                        {key === 'wifi' && 'WiFi'}
-                        {key === 'parking' && 'Parking'}
-                        {key === 'balcony' && 'Balcon'}
-                        {key === 'garden' && 'Jardin'}
-                        {key === 'storage' && 'Rangement'}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 
@@ -554,20 +527,145 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
             />
           </div>
 
+          {/* Equipment Management */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                <Wrench className="w-5 h-5 mr-2" />
+                Équipements inclus
+              </h3>
+              <button
+                type="button"
+                onClick={addEquipment}
+                className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Ajouter équipement
+              </button>
+            </div>
+            
+            {equipmentList.length === 0 ? (
+              <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
+                <Wrench className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500">Aucun équipement ajouté</p>
+                <button
+                  type="button"
+                  onClick={addEquipment}
+                  className="mt-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  Ajouter le premier équipement
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {equipmentList.map((equipment, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium">Équipement {index + 1}</h4>
+                      <button
+                        type="button"
+                        onClick={() => removeEquipment(index)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Catégorie
+                        </label>
+                        <select
+                          value={equipment.category}
+                          onChange={(e) => updateEquipment(index, 'category', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          {equipmentCategories.map(cat => (
+                            <option key={cat.value} value={cat.value}>
+                              {cat.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Nom
+                        </label>
+                        <input
+                          type="text"
+                          value={equipment.name}
+                          onChange={(e) => updateEquipment(index, 'name', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="ex: Réfrigérateur"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          État
+                        </label>
+                        <select
+                          value={equipment.condition}
+                          onChange={(e) => updateEquipment(index, 'condition', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          {conditionOptions.map(cond => (
+                            <option key={cond.value} value={cond.value}>
+                              {cond.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={equipment.included_in_rent}
+                            onChange={(e) => updateEquipment(index, 'included_in_rent', e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">Inclus dans le loyer</span>
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Description (optionnel)
+                      </label>
+                      <input
+                        type="text"
+                        value={equipment.description}
+                        onChange={(e) => updateEquipment(index, 'description', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Détails supplémentaires..."
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Form Actions */}
           <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={loading}
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={loading}
             >
-              {property ? 'Modifier' : 'Ajouter'}
+              {loading ? 'Sauvegarde...' : (property ? 'Modifier' : 'Ajouter')}
             </button>
           </div>
         </form>

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, CreditCard, Check, X, Clock, AlertTriangle, Filter, Download } from 'lucide-react';
-import { Payment, Tenant, Property, Unit, PaymentStatus } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { usePayments } from '../../hooks/usePayments';
+import { useTenants } from '../../hooks/useTenants';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNotifications } from '../../hooks/useNotifications';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
-import { usePaymentReminders } from '../../hooks/usePaymentReminders';
-import PaymentReminderButton from './PaymentReminderButton';
+import { useTranslation } from '../../hooks/useTranslation';
 
 interface PaymentsTabProps {
   onTabChange: (tab: string) => void;
@@ -14,71 +13,26 @@ interface PaymentsTabProps {
 
 const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
   const { user } = useAuth();
-  const [payments, setPayments] = useLocalStorage<Payment[]>('gestionloc_payments', []);
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const { addNotification } = useNotifications('1');
-  const [filter, setFilter] = useState<PaymentStatus | 'all'>('all');
-  const { addHistoryEntry } = useTenantHistory();
+  const { formatCurrency } = useTranslation();
+  const { payments, loading, markAsPaid, markAsLate, generateMonthlyPayments } = usePayments();
+  const { tenants } = useTenants();
+  const { properties } = useProperties();
+  const { units } = useUnits();
+  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'late' | 'overdue'>('all');
 
-  // Generate monthly payments for all tenants
+  // Generate monthly payments on component mount
   useEffect(() => {
-    const generateMonthlyPayments = () => {
-      if (user?.role !== 'owner') return; // Only owners generate payments
-      
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      
-      tenants.forEach(tenant => {
-        const dueDate = new Date(currentYear, currentMonth, tenant.paymentDueDate);
-        
-        // Check if payment already exists for this month
-        const existingPayment = payments.find(p => 
-          p.tenantId === tenant.id &&
-          new Date(p.dueDate).getMonth() === currentMonth &&
-          new Date(p.dueDate).getFullYear() === currentYear
-        );
-
-        if (!existingPayment) {
-          const newPayment: Payment = {
-            id: Date.now().toString() + Math.random(),
-            tenantId: tenant.id,
-            amount: tenant.monthlyRent,
-            dueDate,
-            status: today > dueDate ? 'late' : 'pending',
-            createdAt: new Date(),
-          };
-
-          setPayments(prev => [...prev, newPayment]);
-
-          // Send notification 5 days before due date
-          const notificationDate = new Date(dueDate);
-          notificationDate.setDate(notificationDate.getDate() - 5);
-          
-          if (today >= notificationDate && today <= dueDate) {
-            addNotification({
-              userId: tenant.userId,
-              type: 'payment_reminder',
-              title: 'Rappel de paiement',
-              message: `Votre loyer de ${tenant.monthlyRent}€ est dû le ${dueDate.toLocaleDateString('fr-FR')}`,
-              read: false,
-            });
-          }
-        }
-      });
-    };
-
-    generateMonthlyPayments();
-  }, [tenants, payments, setPayments, addNotification]);
+    if (user?.role === 'owner' && tenants.length > 0) {
+      generateMonthlyPayments();
+    }
+  }, [user, tenants.length]);
 
   const getTenantInfo = (tenantId: string) => {
     const tenant = tenants.find(t => t.id === tenantId);
     if (!tenant) return { name: 'Locataire supprimé', property: '' };
     
-    const property = properties.find(p => p.id === tenant.propertyId);
-    const unit = units.find(u => u.id === tenant.unitId);
+    const property = properties.find(p => p.id === tenant.property_id);
+    const unit = units.find(u => u.id === tenant.unit_id);
     
     return {
       name: `Locataire #${tenant.id.slice(-4)}`,
@@ -86,46 +40,33 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
     };
   };
 
-  const markAsPaid = (paymentId: string) => {
-    const payment = payments.find(p => p.id === paymentId);
-    if (!payment) return;
-    
-    setPayments(prev => prev.map(payment => 
-      payment.id === paymentId 
-        ? { ...payment, status: 'paid' as PaymentStatus, paidDate: new Date() }
-        : payment
-    ));
-    
-    // Add to tenant history
-    const tenant = tenants.find(t => t.id === payment.tenantId);
-    if (tenant) {
-      addHistoryEntry({
-        type: 'payment',
-        title: `Paiement effectué - ${payment.amount}$`,
-        description: `Paiement de loyer de ${payment.amount}$ effectué`,
-        propertyId: tenant.propertyId,
-        unitId: tenant.unitId,
-        relatedId: payment.id,
-        metadata: {
-          amount: payment.amount,
-          status: 'paid',
-          dueDate: payment.dueDate.toISOString()
-        }
-      });
+  const handleMarkAsPaid = async (paymentId: string) => {
+    try {
+      await markAsPaid(paymentId);
+      alert('✅ Paiement marqué comme payé !');
+    } catch (error) {
+      console.error('Error marking payment as paid:', error);
+      alert('Erreur lors de la mise à jour du paiement');
     }
   };
 
-  const markAsLate = (paymentId: string) => {
-    setPayments(prev => prev.map(payment => 
-      payment.id === paymentId 
-        ? { ...payment, status: 'late' as PaymentStatus }
-        : payment
-    ));
+  const handleMarkAsLate = async (paymentId: string) => {
+    try {
+      await markAsLate(paymentId);
+      alert('⚠️ Paiement marqué en retard');
+    } catch (error) {
+      console.error('Error marking payment as late:', error);
+      alert('Erreur lors de la mise à jour du paiement');
+    }
   };
 
   const userPayments = (() => {
-    const currentTenant = tenants.find(t => t.userId === user?.id);
-    return currentTenant ? payments.filter(payment => payment.tenantId === currentTenant.id) : [];
+    if (user?.role === 'owner') {
+      return payments;
+    } else {
+      const currentTenant = tenants.find(t => t.user_id === user?.id);
+      return currentTenant ? payments.filter(payment => payment.tenant_id === currentTenant.id) : [];
+    }
   })();
 
   const filteredPayments = userPayments.filter(payment => 
@@ -142,7 +83,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
     paidAmount: userPayments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0),
   };
 
-  const getStatusIcon = (status: PaymentStatus) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'paid':
         return <Check className="w-4 h-4 text-green-600" />;
@@ -157,7 +98,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const getStatusText = (status: PaymentStatus) => {
+  const getStatusText = (status: string) => {
     switch (status) {
       case 'paid':
         return 'Payé';
@@ -172,7 +113,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
     }
   };
 
-  const getStatusColor = (status: PaymentStatus) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'paid':
         return 'bg-green-100 text-green-800';
@@ -186,6 +127,21 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
         return 'bg-gray-100 text-gray-800';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -220,7 +176,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Montant total</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalAmount.toLocaleString('fr-CA')}$</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalAmount)}</p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
               <Check className="w-6 h-6 text-green-600" />
@@ -232,7 +188,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Payés</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.paidAmount.toLocaleString('fr-CA')}$</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.paidAmount)}</p>
             </div>
             <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
               <Check className="w-6 h-6 text-emerald-600" />
@@ -312,7 +268,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
                 </tr>
               ) : (
                 filteredPayments.map((payment) => {
-                  const tenantInfo = getTenantInfo(payment.tenantId);
+                  const tenantInfo = getTenantInfo(payment.tenant_id);
                   
                   return (
                     <tr key={payment.id} className="hover:bg-gray-50">
@@ -331,16 +287,16 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          {payment.amount.toLocaleString('fr-CA')}$
+                          {formatCurrency(payment.amount)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {new Date(payment.dueDate).toLocaleDateString('fr-FR')}
+                          {new Date(payment.due_date).toLocaleDateString('fr-FR')}
                         </div>
-                        {payment.paidDate && (
+                        {payment.paid_date && (
                           <div className="text-xs text-gray-500">
-                            Payé le {new Date(payment.paidDate).toLocaleDateString('fr-FR')}
+                            Payé le {new Date(payment.paid_date).toLocaleDateString('fr-FR')}
                           </div>
                         )}
                       </td>
@@ -354,7 +310,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
                         <div className="flex space-x-2">
                           {user?.role === 'owner' && payment.status !== 'paid' && (
                             <button
-                              onClick={() => markAsPaid(payment.id)}
+                              onClick={() => handleMarkAsPaid(payment.id)}
                               className="text-green-600 hover:text-green-900"
                               title="Marquer comme payé"
                             >
@@ -363,7 +319,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
                           )}
                           {user?.role === 'owner' && payment.status === 'pending' && (
                             <button
-                              onClick={() => markAsLate(payment.id)}
+                              onClick={() => handleMarkAsLate(payment.id)}
                               className="text-orange-600 hover:text-orange-900"
                               title="Marquer en retard"
                             >
@@ -373,8 +329,8 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
                           {user?.role === 'tenant' && payment.status !== 'paid' && (
                             <button
                               onClick={() => {
-                                if (confirm('Confirmer le paiement de ' + payment.amount + '$ ?')) {
-                                  markAsPaid(payment.id);
+                                if (confirm('Confirmer le paiement de ' + formatCurrency(payment.amount) + ' ?')) {
+                                  handleMarkAsPaid(payment.id);
                                   alert('✅ Paiement effectué avec succès !');
                                 }
                               }}
@@ -382,9 +338,6 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({ onTabChange }) => {
                             >
                               Payer
                             </button>
-                          )}
-                          {user?.role === 'owner' && payment.status !== 'paid' && (
-                            <PaymentReminderButton payment={payment} />
                           )}
                         </div>
                       </td>

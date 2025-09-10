@@ -1,37 +1,42 @@
 import React, { useState } from 'react';
 import { X, Upload, Receipt, AlertTriangle } from 'lucide-react';
-import { Expense, ExpenseType, Property, Unit, Issue, Tenant } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useExpenses } from '../../hooks/useExpenses';
+import { useIssues } from '../../hooks/useIssues';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { useTenants } from '../../hooks/useTenants';
 
 interface ExpenseFormProps {
   onClose: () => void;
-  expense?: Expense;
-  linkedIssue?: Issue;
+  expense?: any;
+  linkedIssue?: any;
 }
 
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue }) => {
-  const [expenses, setExpenses] = useLocalStorage<Expense[]>('gestionloc_expenses', []);
-  const [issues, setIssues] = useLocalStorage<Issue[]>('gestionloc_issues', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
+  const { addExpense, updateExpense } = useExpenses();
+  const { issues, updateIssue } = useIssues();
+  const { properties } = useProperties();
+  const { units } = useUnits();
+  const { tenants } = useTenants();
   
   const [formData, setFormData] = useState({
     description: expense?.description || linkedIssue?.title || '',
     amount: expense?.amount || 0,
-    type: expense?.type || 'maintenance' as ExpenseType,
-    propertyId: expense?.propertyId || linkedIssue?.propertyId || '',
-    unitId: expense?.unitId || linkedIssue?.unitId || '',
-    issueId: expense?.issueId || linkedIssue?.id || '',
+    type: expense?.type || 'maintenance',
+    property_id: expense?.property_id || linkedIssue?.property_id || '',
+    unit_id: expense?.unit_id || linkedIssue?.unit_id || '',
+    issue_id: expense?.issue_id || linkedIssue?.id || '',
     date: expense?.date ? new Date(expense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     receiptFile: null as File | null,
     markIssueStatus: 'no_change' as 'no_change' | 'in_progress' | 'resolved',
   });
 
-  const selectedProperty = properties.find(p => p.id === formData.propertyId);
-  const availableUnits = units.filter(u => u.propertyId === formData.propertyId);
+  const [loading, setLoading] = useState(false);
+
+  const selectedProperty = properties.find(p => p.id === formData.property_id);
+  const availableUnits = units.filter(u => u.property_id === formData.property_id);
   const pendingIssues = issues.filter(i => i.status !== 'resolved');
-  const selectedIssue = issues.find(i => i.id === formData.issueId);
+  const selectedIssue = issues.find(i => i.id === formData.issue_id);
 
   const getTenantName = (tenantId: string) => {
     const tenant = tenants.find(t => t.id === tenantId);
@@ -39,43 +44,45 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
     return `Locataire #${tenant.id.slice(-4)}`;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     
-    const newExpense: Expense = {
-      id: expense?.id || Date.now().toString(),
-      ownerId: '1', // Current user ID
-      description: formData.description,
-      amount: formData.amount,
-      type: formData.type,
-      propertyId: formData.propertyId || undefined,
-      unitId: formData.unitId || undefined,
-      issueId: formData.issueId || undefined,
-      date: new Date(formData.date),
-      receiptUrl: formData.receiptFile ? URL.createObjectURL(formData.receiptFile) : expense?.receiptUrl,
-      createdAt: expense?.createdAt || new Date(),
-    };
+    try {
+      const expenseData = {
+        description: formData.description,
+        amount: formData.amount,
+        type: formData.type,
+        property_id: formData.property_id || undefined,
+        unit_id: formData.unit_id || undefined,
+        issue_id: formData.issue_id || undefined,
+        date: formData.date,
+        receipt_url: formData.receiptFile ? URL.createObjectURL(formData.receiptFile) : expense?.receipt_url,
+        vendor: '',
+        notes: ''
+      };
 
-    if (expense) {
-      setExpenses(prev => prev.map(e => e.id === expense.id ? newExpense : e));
-    } else {
-      setExpenses(prev => [...prev, newExpense]);
-    }
+      if (expense) {
+        await updateExpense(expense.id, expenseData);
+      } else {
+        await addExpense(expenseData);
+      }
 
-    // Update issue status if selected
-    if (formData.issueId && formData.markIssueStatus !== 'no_change') {
-      setIssues(prev => prev.map(issue => 
-        issue.id === formData.issueId 
-          ? { 
-              ...issue, 
-              status: formData.markIssueStatus as 'in_progress' | 'resolved',
-              resolvedAt: formData.markIssueStatus === 'resolved' ? new Date() : issue.resolvedAt
-            }
-          : issue
-      ));
+      // Update issue status if selected
+      if (formData.issue_id && formData.markIssueStatus !== 'no_change') {
+        await updateIssue(formData.issue_id, {
+          status: formData.markIssueStatus,
+          resolved_at: formData.markIssueStatus === 'resolved' ? new Date().toISOString() : undefined
+        });
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Error saving expense:', error);
+      alert('Erreur lors de la sauvegarde de la dépense');
+    } finally {
+      setLoading(false);
     }
-    
-    onClose();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,7 +152,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
               </label>
               <select
                 value={formData.type}
-                onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as ExpenseType }))}
+                onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               >
@@ -180,14 +187,14 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
                   Propriété
                 </label>
                 <select
-                  value={formData.propertyId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, propertyId: e.target.value, unitId: '' }))}
+                  value={formData.property_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, property_id: e.target.value, unit_id: '' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Aucune propriété spécifique</option>
                   {properties.map(property => (
                     <option key={property.id} value={property.id}>
-                      {property.name} - {property.address.street}, {property.address.city}
+                      {property.name} - {property.address?.street}, {property.address?.city}
                     </option>
                   ))}
                 </select>
@@ -199,8 +206,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
                     Chambre
                   </label>
                   <select
-                    value={formData.unitId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, unitId: e.target.value }))}
+                    value={formData.unit_id}
+                    onChange={(e) => setFormData(prev => ({ ...prev, unit_id: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">Toute la propriété</option>
@@ -224,15 +231,15 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
                   Problème signalé
                 </label>
                 <select
-                  value={formData.issueId}
+                  value={formData.issue_id}
                   onChange={(e) => {
                     const issueId = e.target.value;
                     const issue = issues.find(i => i.id === issueId);
                     setFormData(prev => ({ 
                       ...prev, 
-                      issueId,
-                      propertyId: issue?.propertyId || prev.propertyId,
-                      unitId: issue?.unitId || prev.unitId,
+                      issue_id: issueId,
+                      property_id: issue?.property_id || prev.property_id,
+                      unit_id: issue?.unit_id || prev.unit_id,
                       description: issue?.title || prev.description
                     }));
                   }}
@@ -240,11 +247,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
                 >
                   <option value="">Aucun problème associé</option>
                   {pendingIssues.map(issue => {
-                    const property = properties.find(p => p.id === issue.propertyId);
-                    const unit = units.find(u => u.id === issue.unitId);
+                    const property = properties.find(p => p.id === issue.property_id);
+                    const unit = units.find(u => u.id === issue.unit_id);
                     return (
                       <option key={issue.id} value={issue.id}>
-                        {issue.title} - {property?.name}{unit ? ` (${unit.name})` : ''} - {getTenantName(issue.tenantId)}
+                        {issue.title} - {property?.name}{unit ? ` (${unit.name})` : ''} - {getTenantName(issue.tenant_id)}
                       </option>
                     );
                   })}
@@ -268,14 +275,14 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
                            selectedIssue.priority === 'high' ? 'Élevée' : 
                            selectedIssue.priority === 'medium' ? 'Moyenne' : 'Faible'}
                         </span>
-                        <span>Signalé le {new Date(selectedIssue.createdAt).toLocaleDateString('fr-FR')}</span>
+                        <span>Signalé le {new Date(selectedIssue.created_at).toLocaleDateString('fr-FR')}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {formData.issueId && (
+              {formData.issue_id && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Mettre à jour le statut du problème
@@ -322,7 +329,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
                     Fichier sélectionné: {formData.receiptFile.name}
                   </p>
                 )}
-                {expense?.receiptUrl && !formData.receiptFile && (
+                {expense?.receipt_url && !formData.receiptFile && (
                   <p className="text-sm text-blue-600 mt-2">
                     Justificatif existant disponible
                   </p>
@@ -337,14 +344,16 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onClose, expense, linkedIssue
               type="button"
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={loading}
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={loading}
             >
-              {expense ? 'Modifier' : 'Ajouter'}
+              {loading ? 'Sauvegarde...' : (expense ? 'Modifier' : 'Ajouter')}
             </button>
           </div>
         </form>

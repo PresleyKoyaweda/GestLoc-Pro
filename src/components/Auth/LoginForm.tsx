@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Building2, User, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const LoginForm: React.FC = () => {
@@ -68,14 +68,21 @@ const LoginForm: React.FC = () => {
 
     try {
       if (isResetPassword) {
+        const { error } = await supabase.auth.resetPasswordForEmail(formData.email);
+        if (error) {
+          setError(error.message);
+          return;
+        }
         setSuccess('Un email de réinitialisation a été envoyé à votre adresse');
         setIsResetPassword(false);
       } else if (isLogin) {
+        console.log('🔐 Tentative de connexion:', formData.email, 'Type:', accountType);
         const result = await login(formData.email, formData.password, accountType);
         if (!result.success) {
           setError(result.error || 'Erreur de connexion');
         }
       } else {
+        console.log('📝 Création de compte:', formData.email, 'Rôle:', accountType);
         const result = await signup({
           email: formData.email,
           password: formData.password,
@@ -85,7 +92,7 @@ const LoginForm: React.FC = () => {
         });
         
         if (result.success) {
-          setSuccess('Compte créé avec succès ! Vous pouvez maintenant vous connecter.');
+          setSuccess(`✅ Compte ${accountType === 'owner' ? 'propriétaire' : 'locataire'} créé avec succès ! Vous pouvez maintenant vous connecter.`);
           setIsLogin(true);
           setFormData({
             email: formData.email,
@@ -99,6 +106,7 @@ const LoginForm: React.FC = () => {
         }
       }
     } catch (err) {
+      console.error('❌ Erreur:', err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     }
   };
@@ -148,14 +156,20 @@ const LoginForm: React.FC = () => {
         {/* Titre de la section */}
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {isResetPassword ? 'Réinitialiser le mot de passe' : isLogin ? 'Se connecter' : 'S\'inscrire'}
+            {isResetPassword ? 'Réinitialiser le mot de passe' : isLogin ? 'Se connecter' : 'Créer un compte'}
           </h2>
+          {!isResetPassword && (
+            <p className="text-sm text-gray-600 mt-2">
+              {isLogin ? 'Connectez-vous à votre compte' : `Créer un compte ${accountType === 'owner' ? 'propriétaire' : 'locataire'}`}
+            </p>
+          )}
         </div>
 
         {/* Messages d'erreur et de succès */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            {error}
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
+            <AlertCircle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
         {success && (
@@ -166,45 +180,55 @@ const LoginForm: React.FC = () => {
 
         <form className="space-y-6" onSubmit={handleSubmit}>
           {/* Type de compte - pour connexion et inscription */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Type de compte
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setAccountType('owner')}
-                className={`flex flex-col items-center justify-center px-4 py-4 border rounded-lg transition-colors ${
-                  accountType === 'owner'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <Building2 className="h-6 w-6 mb-2" />
-                <span className="text-sm font-medium">Propriétaire</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAccountType('tenant')}
-                className={`flex flex-col items-center justify-center px-4 py-4 border rounded-lg transition-colors ${
-                  accountType === 'tenant'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <User className="h-6 w-6 mb-2" />
-                <span className="text-sm font-medium">Locataire</span>
-              </button>
+          {!isResetPassword && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Type de compte
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAccountType('owner')}
+                  className={`flex flex-col items-center justify-center px-4 py-4 border rounded-lg transition-all ${
+                    accountType === 'owner'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <Building2 className="h-6 w-6 mb-2" />
+                  <span className="text-sm font-medium">Propriétaire</span>
+                  <span className="text-xs text-gray-500 mt-1">Gérer mes biens</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccountType('tenant')}
+                  className={`flex flex-col items-center justify-center px-4 py-4 border rounded-lg transition-all ${
+                    accountType === 'tenant'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <User className="h-6 w-6 mb-2" />
+                  <span className="text-sm font-medium">Locataire</span>
+                  <span className="text-xs text-gray-500 mt-1">Chercher un logement</span>
+                </button>
+              </div>
+              {!isLogin && (
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    ✅ Vous créez un compte <strong>{accountType === 'owner' ? 'propriétaire' : 'locataire'}</strong>
+                  </p>
+                </div>
+              )}
             </div>
-          </div>
-
+          )}
 
           {/* Champs prénom et nom - uniquement pour l'inscription */}
           {!isLogin && !isResetPassword && (
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
-                  Prénom
+                  Prénom *
                 </label>
                 <input
                   id="firstName"
@@ -219,7 +243,7 @@ const LoginForm: React.FC = () => {
               </div>
               <div>
                 <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nom
+                  Nom *
                 </label>
                 <input
                   id="lastName"
@@ -238,7 +262,7 @@ const LoginForm: React.FC = () => {
           {/* Email */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email
+              Email *
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -261,7 +285,7 @@ const LoginForm: React.FC = () => {
           {!isResetPassword && (
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Mot de passe
+                Mot de passe *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -296,7 +320,7 @@ const LoginForm: React.FC = () => {
           {!isLogin && !isResetPassword && (
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                Confirmer le mot de passe
+                Confirmer le mot de passe *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -336,14 +360,14 @@ const LoginForm: React.FC = () => {
             {loading ? (
               <div className="flex items-center">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Chargement...
+                {isLogin ? 'Connexion...' : 'Création...'}
               </div>
             ) : isResetPassword ? (
               'Envoyer le lien de réinitialisation'
             ) : isLogin ? (
-              'Se connecter'
+              `Se connecter comme ${accountType === 'owner' ? 'propriétaire' : 'locataire'}`
             ) : (
-              'S\'inscrire'
+              `Créer un compte ${accountType === 'owner' ? 'propriétaire' : 'locataire'}`
             )}
           </button>
         </form>
@@ -387,8 +411,19 @@ const LoginForm: React.FC = () => {
             </p>
           )}
         </div>
-       
-        
+
+        {/* Comptes de test */}
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-gray-900 mb-2">Comptes de test :</h3>
+          <div className="space-y-2 text-xs text-gray-600">
+            <div>
+              <strong>Propriétaire :</strong> owner@test.com / password123
+            </div>
+            <div>
+              <strong>Locataire :</strong> tenant@test.com / password123
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

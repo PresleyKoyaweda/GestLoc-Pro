@@ -1,87 +1,78 @@
 import React, { useState } from 'react';
 import { X, Upload, AlertTriangle, Home } from 'lucide-react';
-import { Issue, IssuePriority, Property, Unit, Tenant } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useIssues } from '../../hooks/useIssues';
+import { useProperties } from '../../hooks/useProperties';
+import { useUnits } from '../../hooks/useUnits';
+import { useTenants } from '../../hooks/useTenants';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenantHistory } from '../../hooks/useTenantHistory';
 
 interface IssueFormProps {
   onClose: () => void;
-  issue?: Issue;
+  issue?: any;
   isOwner?: boolean;
 }
 
 const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true }) => {
-  const [issues, setIssues] = useLocalStorage<Issue[]>('gestionloc_issues', []);
-  const [properties] = useLocalStorage<Property[]>('gestionloc_properties', []);
-  const [units] = useLocalStorage<Unit[]>('gestionloc_units', []);
-  const [tenants] = useLocalStorage<Tenant[]>('gestionloc_tenants', []);
+  const { addIssue, updateIssue } = useIssues();
+  const { properties } = useProperties();
+  const { units } = useUnits();
+  const { tenants } = useTenants();
   const { user } = useAuth();
-  const { addHistoryEntry } = useTenantHistory();
 
   // For tenants, find their tenant record to get their property
-  const currentTenant = tenants.find(t => t.userId === user?.id);
+  const currentTenant = tenants.find(t => t.user_id === user?.id);
   
   const [formData, setFormData] = useState({
     title: issue?.title || '',
     description: issue?.description || '',
-    priority: issue?.priority || 'medium' as IssuePriority,
-    propertyId: issue?.propertyId || currentTenant?.propertyId || '',
-    unitId: issue?.unitId || currentTenant?.unitId || '',
-    ownerNotes: issue?.ownerNotes || '',
+    priority: issue?.priority || 'medium',
+    property_id: issue?.property_id || currentTenant?.property_id || '',
+    unit_id: issue?.unit_id || currentTenant?.unit_id || '',
+    owner_notes: issue?.owner_notes || '',
     photos: [] as File[],
   });
 
-  const selectedProperty = properties.find(p => p.id === formData.propertyId);
-  const availableUnits = units.filter(u => u.propertyId === formData.propertyId);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const selectedProperty = properties.find(p => p.id === formData.property_id);
+  const availableUnits = units.filter(u => u.property_id === formData.property_id);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     
-    const photoUrls = formData.photos.map(photo => URL.createObjectURL(photo));
-    
-    // Find tenant ID for the current user if they're a tenant
-    const currentTenant = tenants.find(t => t.userId === user?.id);
-    const tenantId = isOwner ? (issue?.tenantId || currentTenant?.id || '1') : (currentTenant?.id || user?.id || '1');
-    
-    const newIssue: Issue = {
-      id: issue?.id || Date.now().toString(),
-      tenantId: tenantId,
-      propertyId: formData.propertyId || undefined,
-      unitId: formData.unitId || undefined,
-      title: formData.title,
-      description: formData.description,
-      priority: formData.priority,
-      status: issue?.status || 'pending',
-      photos: [...(issue?.photos || []), ...photoUrls],
-      createdAt: issue?.createdAt || new Date(),
-      resolvedAt: issue?.resolvedAt,
-      ownerNotes: formData.ownerNotes,
-    };
-
-    if (issue) {
-      setIssues(prev => prev.map(i => i.id === issue.id ? newIssue : i));
-    } else {
-      setIssues(prev => [...prev, newIssue]);
+    try {
+      const photoUrls = formData.photos.map(photo => URL.createObjectURL(photo));
       
-      // Add to tenant history for new issues
-      if (!isOwner) {
-        addHistoryEntry({
-          type: 'issue_reported',
-          title: `Problème signalé - ${formData.title}`,
-          description: formData.description,
-          propertyId: formData.propertyId,
-          unitId: formData.unitId,
-          relatedId: newIssue.id,
-          metadata: {
-            priority: formData.priority,
-            status: 'pending'
-          }
-        });
+      // Find tenant ID for the current user if they're a tenant
+      const currentTenant = tenants.find(t => t.user_id === user?.id);
+      const tenantId = isOwner ? (issue?.tenant_id || currentTenant?.id || '1') : (currentTenant?.id || user?.id || '1');
+      
+      const issueData = {
+        tenant_id: tenantId,
+        property_id: formData.property_id || undefined,
+        unit_id: formData.unit_id || undefined,
+        title: formData.title,
+        description: formData.description,
+        priority: formData.priority,
+        status: issue?.status || 'pending',
+        photos: [...(issue?.photos || []), ...photoUrls],
+        owner_notes: formData.owner_notes,
+      };
+
+      if (issue) {
+        await updateIssue(issue.id, issueData);
+      } else {
+        await addIssue(issueData);
       }
+      
+      onClose();
+    } catch (error) {
+      console.error('Error saving issue:', error);
+      alert('Erreur lors de la sauvegarde du problème');
+    } finally {
+      setLoading(false);
     }
-    
-    onClose();
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,7 +158,7 @@ const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true })
                     name="priority"
                     value={priority.value}
                     checked={formData.priority === priority.value}
-                    onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as IssuePriority }))}
+                    onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
                     className="sr-only"
                   />
                   <AlertTriangle className={`w-5 h-5 mr-2 ${priority.color}`} />
@@ -187,14 +178,14 @@ const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true })
                     Propriété
                   </label>
                   <select
-                    value={formData.propertyId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, propertyId: e.target.value, unitId: '' }))}
+                    value={formData.property_id}
+                    onChange={(e) => setFormData(prev => ({ ...prev, property_id: e.target.value, unit_id: '' }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">Sélectionner une propriété</option>
                     {properties.map(property => (
                       <option key={property.id} value={property.id}>
-                        {property.name} - {property.address.street}, {property.address.city}
+                        {property.name} - {property.address?.street}, {property.address?.city}
                       </option>
                     ))}
                   </select>
@@ -206,8 +197,8 @@ const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true })
                       Chambre
                     </label>
                     <select
-                      value={formData.unitId}
-                      onChange={(e) => setFormData(prev => ({ ...prev, unitId: e.target.value }))}
+                      value={formData.unit_id}
+                      onChange={(e) => setFormData(prev => ({ ...prev, unit_id: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Espaces communs</option>
@@ -228,8 +219,8 @@ const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true })
                     <h4 className="font-medium text-blue-900">Votre logement</h4>
                     <p className="text-sm text-blue-800">
                       {selectedProperty?.name}
-                      {selectedProperty?.type === 'shared' && availableUnits.find(u => u.id === currentTenant.unitId) && 
-                        ` - ${availableUnits.find(u => u.id === currentTenant.unitId)?.name}`
+                      {selectedProperty?.type === 'shared' && availableUnits.find(u => u.id === currentTenant.unit_id) && 
+                        ` - ${availableUnits.find(u => u.id === currentTenant.unit_id)?.name}`
                       }
                     </p>
                   </div>
@@ -300,8 +291,8 @@ const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true })
                 Notes du propriétaire
               </label>
               <textarea
-                value={formData.ownerNotes}
-                onChange={(e) => setFormData(prev => ({ ...prev, ownerNotes: e.target.value }))}
+                value={formData.owner_notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, owner_notes: e.target.value }))}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Notes internes, actions prises, etc."
@@ -315,14 +306,16 @@ const IssueForm: React.FC<IssueFormProps> = ({ onClose, issue, isOwner = true })
               type="button"
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={loading}
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={loading}
             >
-              {issue ? 'Modifier' : 'Signaler'}
+              {loading ? 'Sauvegarde...' : (issue ? 'Modifier' : 'Signaler')}
             </button>
           </div>
         </form>
