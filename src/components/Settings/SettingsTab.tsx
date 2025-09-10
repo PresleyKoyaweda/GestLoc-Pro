@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Shield, Bell, Globe, Palette, Save, Trash2, AlertTriangle } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Shield, Bell, Globe, Palette, Save, Trash2, AlertTriangle, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -23,6 +23,38 @@ const SettingsTab: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('light');
+
+  // Appliquer le thème au chargement
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    setCurrentTheme(savedTheme as 'light' | 'dark');
+    applyTheme(savedTheme as 'light' | 'dark');
+  }, []);
+
+  const applyTheme = (theme: 'light' | 'dark') => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  };
+
+  const toggleTheme = () => {
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    setCurrentTheme(newTheme);
+    applyTheme(newTheme);
+    
+    // Mettre à jour les préférences utilisateur
+    setFormData(prev => ({
+      ...prev,
+      preferences: {
+        ...prev.preferences,
+        theme: newTheme
+      }
+    }));
+  };
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -416,15 +448,32 @@ const SettingsTab: React.FC = () => {
                 <Palette className="w-4 h-4 mr-2" />
                 Thème
               </h3>
-              <select
-                value={formData.preferences.theme}
-                onChange={(e) => handlePreferenceChange('', 'theme', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="light">Clair</option>
-                <option value="dark">Sombre</option>
-                <option value="auto">Automatique</option>
-              </select>
+              <div className="flex items-center space-x-4">
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className={`flex items-center px-4 py-2 rounded-lg border-2 transition-all ${
+                    currentTheme === 'light' 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                      : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  <Sun className="w-4 h-4 mr-2" />
+                  Clair
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className={`flex items-center px-4 py-2 rounded-lg border-2 transition-all ${
+                    currentTheme === 'dark' 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                      : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  <Moon className="w-4 h-4 mr-2" />
+                  Sombre
+                </button>
+              </div>
             </div>
           </div>
 

@@ -62,16 +62,23 @@ const PropertyRequestsTab: React.FC = () => {
       }
 
       // Send notification via Supabase function
-      await supabase.rpc('create_notification', {
-        target_user_id: request.tenant_id,
-        notification_type: 'general',
-        notification_title: '🎉 DEMANDE ACCEPTÉE - Bienvenue chez vous !',
-        notification_message: `Félicitations ! Votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} - ${property.name} a été acceptée.`,
-        notification_data: {
-          property_id: property.id,
-          unit_id: unit?.id
-        }
-      });
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: request.tenant_id,
+          type: 'general',
+          title: '🎉 DEMANDE ACCEPTÉE - Bienvenue chez vous !',
+          message: `Félicitations ! Votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} - ${property.name} a été acceptée.`,
+          read: false,
+          data: {
+            property_id: property.id,
+            unit_id: unit?.id
+          }
+        });
+
+      if (notificationError) {
+        console.error('Error creating notification:', notificationError);
+      }
 
       alert('🎉 Demande acceptée ! Un message de bienvenue a été envoyé au locataire.');
     } catch (error) {
@@ -99,17 +106,24 @@ const PropertyRequestsTab: React.FC = () => {
         await updateProperty(property.id, { status: 'libre' });
       }
 
-      // Send notification via Supabase function
-      await supabase.rpc('create_notification', {
-        target_user_id: request.tenant_id,
-        notification_type: 'general',
-        notification_title: '📋 Réponse à votre demande de logement',
-        notification_message: `Nous regrettons de vous informer que votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} - ${property.name} n'a pas pu être acceptée.`,
-        notification_data: {
-          property_id: property.id,
-          unit_id: unit?.id
-        }
-      });
+      // Créer notification pour le locataire
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: request.tenant_id,
+          type: 'general',
+          title: '📋 Réponse à votre demande de logement',
+          message: `Nous regrettons de vous informer que votre demande pour ${unit ? `la chambre ${unit.name}` : 'le logement entier'} - ${property.name} n'a pas pu être acceptée.`,
+          read: false,
+          data: {
+            property_id: property.id,
+            unit_id: unit?.id
+          }
+        });
+
+      if (notificationError) {
+        console.error('Error creating notification:', notificationError);
+      }
 
       alert('📋 Demande refusée. Un message a été envoyé au locataire.');
     } catch (error) {

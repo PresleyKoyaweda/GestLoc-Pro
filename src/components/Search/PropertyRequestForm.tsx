@@ -51,10 +51,11 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
       );
       
       const requestData = {
-        property_id: unit ? undefined : property.id,
+        property_id: property.id,
         unit_id: unit?.id,
         tenant_id: user?.id || '',
         status: 'en_attente',
+        request_date: new Date().toISOString(),
         tenant_info: {
           firstName: formData.firstName,
           lastName: formData.lastName,
@@ -76,18 +77,26 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
         await updateProperty(property.id, { status: 'en_attente_validation' });
       }
 
-      // Send notification to owner via Supabase function
-      await supabase.rpc('create_notification', {
-        target_user_id: property.owner_id,
-        notification_type: 'general',
-        notification_title: 'Nouvelle demande de logement',
-        notification_message: `${formData.firstName} ${formData.lastName} souhaite ${unit ? `rejoindre la chambre ${unit.name}` : 'louer votre logement'} - ${property.name}`,
-        notification_data: {
-          property_id: property.id,
-          unit_id: unit?.id,
-          tenant_id: user?.id
-        }
-      });
+      // Créer notification pour le propriétaire
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: property.owner_id,
+          type: 'general',
+          title: 'Nouvelle demande de logement',
+          message: `${formData.firstName} ${formData.lastName} souhaite ${unit ? `rejoindre la chambre ${unit.name}` : 'louer votre logement'} - ${property.name}`,
+          read: false,
+          data: {
+            property_id: property.id,
+            unit_id: unit?.id,
+            tenant_id: user?.id
+          }
+        });
+
+      if (notificationError) {
+        console.error('Error creating notification:', notificationError);
+        // Ne pas faire échouer la demande pour une erreur de notification
+      }
 
       alert('✅ Votre demande a été envoyée avec succès au propriétaire ! Vous recevrez une notification de sa réponse.');
       onClose();

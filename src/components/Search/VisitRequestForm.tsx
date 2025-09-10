@@ -72,6 +72,13 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
     try {
       if (!formData.selectedDate || !formData.selectedTime) {
         alert('Veuillez sélectionner une date et une heure pour la visite.');
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
+        alert('Veuillez remplir tous les champs obligatoires.');
+        setLoading(false);
         return;
       }
 
@@ -93,25 +100,35 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
         },
         visit_date: formData.selectedDate,
         visit_time: formData.selectedTime,
+        request_date: new Date().toISOString(),
       };
 
       await addVisitRequest(visitRequestData);
 
-      // Notify owner via Supabase function
-      await supabase.rpc('create_notification', {
-        target_user_id: property.owner_id,
-        notification_type: 'general',
-        notification_title: 'Demande de visite',
-        notification_message: `${formData.firstName} ${formData.lastName} souhaite visiter ${unit ? `la chambre ${unit.name}` : 'votre logement'} - ${property.name} le ${new Date(formData.selectedDate).toLocaleDateString('fr-FR')} à ${formData.selectedTime}`,
-        notification_data: {
-          property_id: property.id,
-          unit_id: unit?.id,
-          visit_date: formData.selectedDate,
-          visit_time: formData.selectedTime
-        }
-      });
+      // Créer notification pour le propriétaire
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: property.owner_id,
+          type: 'general',
+          title: 'Nouvelle demande de visite',
+          message: `${formData.firstName} ${formData.lastName} souhaite visiter ${unit ? `la chambre ${unit.name}` : 'votre logement'} - ${property.name} le ${new Date(formData.selectedDate).toLocaleDateString('fr-FR')} à ${formData.selectedTime}`,
+          read: false,
+          data: {
+            property_id: property.id,
+            unit_id: unit?.id,
+            visit_date: formData.selectedDate,
+            visit_time: formData.selectedTime,
+            tenant_id: user?.id
+          }
+        });
 
-      alert('Votre demande de visite a été envoyée au propriétaire !');
+      if (notificationError) {
+        console.error('Error creating notification:', notificationError);
+        // Ne pas faire échouer la demande pour une erreur de notification
+      }
+
+      alert('✅ Votre demande de visite a été envoyée au propriétaire !');
       onClose();
     } catch (error) {
       console.error('Error submitting visit request:', error);

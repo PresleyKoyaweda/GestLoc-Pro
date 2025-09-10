@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Upload, Wrench, Trash2 } from 'lucide-react';
+import { Plus, X, Upload, Wrench, Trash2, Camera, Image } from 'lucide-react';
 import { useProperties } from '../../hooks/useProperties';
 import { useUnits } from '../../hooks/useUnits';
 import { useAuth } from '../../contexts/AuthContext';
@@ -42,6 +42,7 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
   ]);
   
   const [equipmentList, setEquipmentList] = useState<any[]>([]);
+  const [propertyPhotos, setPropertyPhotos] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
 
@@ -49,6 +50,7 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
   React.useEffect(() => {
     if (property?.id) {
       loadPropertyEquipment();
+      loadPropertyPhotos();
     }
   }, [property]);
 
@@ -63,6 +65,21 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
       setEquipmentList(data || []);
     } catch (error) {
       console.error('Error loading equipment:', error);
+    }
+  };
+
+  const loadPropertyPhotos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('property_photos')
+        .select('*')
+        .eq('property_id', property.id)
+        .order('room_name');
+
+      if (error) throw error;
+      setPropertyPhotos(data || []);
+    } catch (error) {
+      console.error('Error loading photos:', error);
     }
   };
 
@@ -119,6 +136,38 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
     }
   };
 
+  const savePropertyPhotos = async (propertyId: string) => {
+    try {
+      // Supprimer les photos existantes
+      await supabase
+        .from('property_photos')
+        .delete()
+        .eq('property_id', propertyId);
+
+      // Ajouter les nouvelles photos
+      const photosToSave = propertyPhotos
+        .filter(photo => photo.file || photo.url)
+        .map(photo => ({
+          property_id: propertyId,
+          room_name: photo.room_name,
+          photo_url: photo.file ? URL.createObjectURL(photo.file) : photo.url,
+          description: photo.description || '',
+          is_main: photo.is_main || false
+        }));
+
+      if (photosToSave.length > 0) {
+        const { error } = await supabase
+          .from('property_photos')
+          .insert(photosToSave);
+
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error('Error saving photos:', error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -127,12 +176,14 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
       if (property) {
         await updateProperty(property.id, formData);
         await saveEquipment(property.id);
+        await savePropertyPhotos(property.id);
       } else {
         const newProperty = await addProperty(formData);
         
         // Save equipment for new property
         if (newProperty) {
           await saveEquipment(newProperty.id);
+          await savePropertyPhotos(newProperty.id);
         }
         
         // Add units if it's a shared property
@@ -179,6 +230,31 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
     setPropertyUnits(prev => prev.map((unit, i) => 
       i === index ? { ...unit, [field]: value } : unit
     ));
+  };
+
+  const addPropertyPhoto = () => {
+    setPropertyPhotos(prev => [...prev, {
+      room_name: '',
+      description: '',
+      file: null,
+      url: '',
+      is_main: false
+    }]);
+  };
+
+  const updatePropertyPhoto = (index: number, field: string, value: any) => {
+    setPropertyPhotos(prev => prev.map((photo, i) => 
+      i === index ? { ...photo, [field]: value } : photo
+    ));
+  };
+
+  const removePropertyPhoto = (index: number) => {
+    setPropertyPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePhotoFileChange = (index: number, file: File) => {
+    updatePropertyPhoto(index, 'file', file);
+    updatePropertyPhoto(index, 'url', URL.createObjectURL(file));
   };
 
   const equipmentCategories = [
@@ -643,6 +719,140 @@ const PropertyForm: React.FC<PropertyFormProps> = ({ onClose, property }) => {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Détails supplémentaires..."
                       />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Photos par pièce */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                <Camera className="w-5 h-5 mr-2" />
+                Photos par pièce
+              </h3>
+              <button
+                type="button"
+                onClick={addPropertyPhoto}
+                className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Ajouter photo
+              </button>
+            </div>
+            
+            {propertyPhotos.length === 0 ? (
+              <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
+                <Image className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500">Aucune photo ajoutée</p>
+                <button
+                  type="button"
+                  onClick={addPropertyPhoto}
+                  className="mt-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  Ajouter la première photo
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {propertyPhotos.map((photo, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium">Photo {index + 1}</h4>
+                      <button
+                        type="button"
+                        onClick={() => removePropertyPhoto(index)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Pièce/Zone
+                        </label>
+                        <select
+                          value={photo.room_name}
+                          onChange={(e) => updatePropertyPhoto(index, 'room_name', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Sélectionner une pièce</option>
+                          <option value="exterior">Extérieur</option>
+                          <option value="living_room">Salon</option>
+                          <option value="kitchen">Cuisine</option>
+                          <option value="bedroom">Chambre</option>
+                          <option value="bathroom">Salle de bain</option>
+                          <option value="balcony">Balcon</option>
+                          <option value="parking">Parking</option>
+                          <option value="common_area">Espace commun</option>
+                          <option value="other">Autre</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Description
+                        </label>
+                        <input
+                          type="text"
+                          value={photo.description}
+                          onChange={(e) => updatePropertyPhoto(index, 'description', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Description de la photo"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Image
+                      </label>
+                      <div className="flex items-center space-x-4">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handlePhotoFileChange(index, file);
+                            }
+                          }}
+                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={photo.is_main}
+                            onChange={(e) => {
+                              // S'assurer qu'une seule photo est principale
+                              if (e.target.checked) {
+                                setPropertyPhotos(prev => prev.map((p, i) => ({
+                                  ...p,
+                                  is_main: i === index
+                                })));
+                              } else {
+                                updatePropertyPhoto(index, 'is_main', false);
+                              }
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">Photo principale</span>
+                        </label>
+                      </div>
+                      
+                      {photo.url && (
+                        <div className="mt-2">
+                          <img
+                            src={photo.url}
+                            alt={photo.description || `Photo ${index + 1}`}
+                            className="w-32 h-24 object-cover rounded-lg border border-gray-200"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

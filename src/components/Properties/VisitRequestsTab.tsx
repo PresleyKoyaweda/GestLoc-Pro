@@ -30,19 +30,26 @@ const VisitRequestsTab: React.FC = () => {
 
       const { property, unit } = getPropertyInfo(request);
       
-      // Send notification via Supabase function
-      await supabase.rpc('create_notification', {
-        target_user_id: request.tenant_id,
-        notification_type: 'general',
-        notification_title: '✅ Visite confirmée - Détails importants',
-        notification_message: `Votre visite pour ${unit ? `la chambre ${unit.name}` : 'le logement'} - ${property?.name} est confirmée pour le ${formatDate(request.visit_date)} à ${request.visit_time}.`,
-        notification_data: {
-          property_id: request.property_id,
-          unit_id: request.unit_id,
-          visit_date: request.visit_date,
-          visit_time: request.visit_time
-        }
-      });
+      // Créer notification pour le locataire
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: request.tenant_id,
+          type: 'general',
+          title: '✅ Visite confirmée - Détails importants',
+          message: `Votre visite pour ${unit ? `la chambre ${unit.name}` : 'le logement'} - ${property?.name} est confirmée pour le ${formatDate(request.visit_date)} à ${request.visit_time}.`,
+          read: false,
+          data: {
+            property_id: request.property_id,
+            unit_id: request.unit_id,
+            visit_date: request.visit_date,
+            visit_time: request.visit_time
+          }
+        });
+
+      if (notificationError) {
+        console.error('Error creating notification:', notificationError);
+      }
 
       alert('✅ Visite confirmée ! Un message de confirmation a été envoyé au locataire.');
     } catch (error) {
@@ -59,17 +66,24 @@ const VisitRequestsTab: React.FC = () => {
     try {
       await cancelVisit(request.id);
 
-      // Send notification via Supabase function
-      await supabase.rpc('create_notification', {
-        target_user_id: request.tenant_id,
-        notification_type: 'general',
-        notification_title: 'Visite annulée',
-        notification_message: `Votre visite du ${new Date(request.visit_date).toLocaleDateString('fr-FR')} à ${request.visit_time} a été annulée.`,
-        notification_data: {
-          property_id: request.property_id,
-          unit_id: request.unit_id
-        }
-      });
+      // Créer notification pour le locataire
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: request.tenant_id,
+          type: 'general',
+          title: 'Visite annulée',
+          message: `Votre visite du ${new Date(request.visit_date).toLocaleDateString('fr-FR')} à ${request.visit_time} a été annulée.`,
+          read: false,
+          data: {
+            property_id: request.property_id,
+            unit_id: request.unit_id
+          }
+        });
+
+      if (notificationError) {
+        console.error('Error creating notification:', notificationError);
+      }
 
       alert('Visite annulée. Le locataire a été notifié.');
     } catch (error) {

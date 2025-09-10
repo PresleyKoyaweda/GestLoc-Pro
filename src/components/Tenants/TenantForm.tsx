@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, X, User, Mail, Phone, Calendar, DollarSign } from 'lucide-react';
+import { X, User, Mail, Phone, Calendar, DollarSign } from 'lucide-react';
 import { useTenants } from '../../hooks/useTenants';
 import { useProperties } from '../../hooks/useProperties';
 import { useUnits } from '../../hooks/useUnits';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
+import { supabase } from '../../lib/supabase';
 
 interface TenantFormProps {
   onClose: () => void;
@@ -25,7 +26,6 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
     lease_start: tenant?.lease_start ? new Date(tenant.lease_start).toISOString().split('T')[0] : '',
     lease_end: tenant?.lease_end ? new Date(tenant.lease_end).toISOString().split('T')[0] : '',
     monthly_rent: tenant?.monthly_rent || 0,
-    deposit_paid: tenant?.deposit_paid || 0,
     payment_due_date: tenant?.payment_due_date || 1,
     emergency_contact: {
       name: tenant?.emergency_contact?.name || '',
@@ -47,28 +47,62 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
       // Validation
       if (!formData.property_id) {
         alert('Veuillez sélectionner une propriété.');
+        setLoading(false);
         return;
       }
       
       if (selectedProperty?.type === 'shared' && !formData.unit_id) {
         alert('Veuillez sélectionner une chambre pour cette colocation.');
+        setLoading(false);
         return;
       }
       
       if (new Date(formData.lease_end) <= new Date(formData.lease_start)) {
         alert('La date de fin du bail doit être postérieure à la date de début.');
+        setLoading(false);
         return;
       }
       
       if (!tenant && !canAddTenant(0)) { // We'll get the actual count from the hook
         alert('Vous avez atteint la limite de locataires pour votre plan. Veuillez mettre à niveau votre abonnement.');
+        setLoading(false);
         return;
       }
       
+      // Créer d'abord un profil utilisateur pour le locataire si nécessaire
+      let tenantUserId = formData.user_id;
+      
+      if (!tenant && !tenantUserId) {
+        // Générer un ID temporaire pour le locataire
+        tenantUserId = crypto.randomUUID();
+        
+        // Créer un profil minimal pour le locataire
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: tenantUserId,
+            email: `tenant-${tenantUserId.slice(-8)}@temp.local`,
+            first_name: 'Locataire',
+            last_name: `#${tenantUserId.slice(-4)}`,
+            role: 'tenant'
+          });
+          
+        if (profileError) {
+          console.error('Error creating tenant profile:', profileError);
+          throw new Error('Erreur lors de la création du profil locataire');
+        }
+      }
+      
       const tenantData = {
-        ...formData,
+        user_id: tenantUserId,
+        property_id: formData.property_id,
+        unit_id: formData.unit_id || null,
         lease_start: formData.lease_start,
         lease_end: formData.lease_end,
+        monthly_rent: formData.monthly_rent,
+        deposit_paid: 0, // Supprimé - interdit au Canada
+        payment_due_date: formData.payment_due_date,
+        emergency_contact: formData.emergency_contact,
         status: 'active'
       };
 
@@ -178,7 +212,7 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Loyer mensuel ($) *
+                  Loyer mensuel (CAD) *
                 </label>
                 <input
                   type="number"
@@ -186,17 +220,6 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                   onChange={(e) => setFormData(prev => ({ ...prev, monthly_rent: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Dépôt de garantie ($)
-                </label>
-                <input
-                  type="number"
-                  value={formData.deposit_paid}
-                  onChange={(e) => setFormData(prev => ({ ...prev, deposit_paid: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>

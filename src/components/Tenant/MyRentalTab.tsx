@@ -179,7 +179,7 @@ const MyRentalTab: React.FC<MyRentalTabProps> = ({ onTabChange }) => {
               <div className="space-y-3">
                 <div>
                   <span className="text-sm text-gray-600">Dépôt de garantie</span>
-                  <p className="font-medium">{formatCurrency(currentTenant.deposit_paid)}</p>
+                  <p className="font-medium text-gray-400">Non applicable (Canada)</p>
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Date d'échéance</span>

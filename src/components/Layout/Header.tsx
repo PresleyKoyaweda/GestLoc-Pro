@@ -33,7 +33,16 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user }) => {
       await markAsRead(notification.id);
     }
     setShowNotifications(false);
+    
+    // Navigation contextuelle basée sur le type de notification
+    if (notification.data?.property_id) {
+      // Rediriger vers l'onglet approprié selon le type
+      if (notification.type === 'payment_reminder') {
+        // Redirection vers les paiements sera gérée par le parent
+      }
+    }
   };
+  
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
