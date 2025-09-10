@@ -25,6 +25,7 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
     unit_id: tenant?.unit_id || '',
     lease_start: tenant?.lease_start ? new Date(tenant.lease_start).toISOString().split('T')[0] : '',
     lease_end: tenant?.lease_end ? new Date(tenant.lease_end).toISOString().split('T')[0] : '',
+    monthly_rent: tenant?.monthly_rent || 0,
     payment_due_date: tenant?.payment_due_date || 1,
     emergency_contact: {
       name: tenant?.emergency_contact?.name || '',
@@ -54,6 +55,15 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
         alert('Veuillez sélectionner une chambre pour cette colocation.');
         setLoading(false);
         return;
+      }
+      
+      // Calculer le loyer automatiquement
+      let monthlyRent = formData.monthly_rent;
+      if (selectedProperty?.type === 'entire') {
+        monthlyRent = selectedProperty.rent || 0;
+      } else if (formData.unit_id) {
+        const selectedUnit = availableUnits.find(u => u.id === formData.unit_id);
+        monthlyRent = selectedUnit?.rent || 0;
       }
       
       if (new Date(formData.lease_end) <= new Date(formData.lease_start)) {
@@ -96,7 +106,7 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
         unit_id: formData.unit_id || null,
         lease_start: formData.lease_start,
         lease_end: formData.lease_end,
-        monthly_rent: formData.monthly_rent,
+        monthly_rent: monthlyRent,
         payment_due_date: formData.payment_due_date,
         emergency_contact: formData.emergency_contact,
         status: 'active'
@@ -210,13 +220,16 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Loyer mensuel (CAD) *
                 </label>
-                <input
-                  type="number"
-                  value={formData.monthly_rent}
-                  onChange={(e) => setFormData(prev => ({ ...prev, monthly_rent: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
+                <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                  <span className="text-gray-700">
+                    {selectedProperty?.type === 'entire' 
+                      ? `${selectedProperty.rent || 0}$ (automatique)`
+                      : formData.unit_id 
+                        ? `${availableUnits.find(u => u.id === formData.unit_id)?.rent || 0}$ (automatique)`
+                        : 'Sélectionnez une chambre'
+                    }
+                  </span>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

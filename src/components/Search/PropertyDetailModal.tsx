@@ -57,32 +57,6 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
 
     loadPropertyPhotos();
   }, [property.id]);
-  const [propertyPhotos, setPropertyPhotos] = useState<any[]>([]);
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const [loadingPhotos, setLoadingPhotos] = useState(true);
-
-  // Charger les photos de la propriété
-  React.useEffect(() => {
-    const loadPropertyPhotos = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('property_photos')
-          .select('*')
-          .eq('property_id', property.id)
-          .order('is_main', { ascending: false })
-          .order('room_name');
-
-        if (error) throw error;
-        setPropertyPhotos(data || []);
-      } catch (error) {
-        console.error('Error loading property photos:', error);
-      } finally {
-        setLoadingPhotos(false);
-      }
-    };
-
-    loadPropertyPhotos();
-  }, [property.id]);
 
   const availableUnits = units.filter(unit => unit.status === 'libre');
 
