@@ -30,7 +30,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user }) => {
 
   const handleNotificationClick = async (notification: any) => {
     if (!notification.read) {
-      await markAsRead(notification.id);
+      try {
+        await markAsRead(notification.id);
+      } catch (error) {
+        console.warn('Erreur marquage notification:', error);
+      }
     }
     setShowNotifications(false);
     

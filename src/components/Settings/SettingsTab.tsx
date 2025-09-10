@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Shield, Bell, Globe, Palette, Save, Trash2, AlertTriangle, Moon, Sun } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Shield, Bell, Globe, Palette, Save, Trash2, AlertTriangle, Moon, Sun, Monitor } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -27,7 +27,7 @@ const SettingsTab: React.FC = () => {
 
   // Appliquer le thème au chargement
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'light';
+    const savedTheme = (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
     setCurrentTheme(savedTheme as 'light' | 'dark');
     applyTheme(savedTheme as 'light' | 'dark');
   }, []);
@@ -448,10 +448,22 @@ const SettingsTab: React.FC = () => {
                 <Palette className="w-4 h-4 mr-2" />
                 Thème
               </h3>
-              <div className="flex items-center space-x-4">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={toggleTheme}
+                  onClick={() => {
+                    if (currentTheme !== 'light') {
+                      setCurrentTheme('light');
+                      applyTheme('light');
+                      setFormData(prev => ({
+                        ...prev,
+                        preferences: {
+                          ...prev.preferences,
+                          theme: 'light'
+                        }
+                      }));
+                    }
+                  }}
                   className={`flex items-center px-4 py-2 rounded-lg border-2 transition-all ${
                     currentTheme === 'light' 
                       ? 'border-blue-500 bg-blue-50 text-blue-700' 
@@ -463,7 +475,19 @@ const SettingsTab: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={toggleTheme}
+                  onClick={() => {
+                    if (currentTheme !== 'dark') {
+                      setCurrentTheme('dark');
+                      applyTheme('dark');
+                      setFormData(prev => ({
+                        ...prev,
+                        preferences: {
+                          ...prev.preferences,
+                          theme: 'dark'
+                        }
+                      }));
+                    }
+                  }}
                   className={`flex items-center px-4 py-2 rounded-lg border-2 transition-all ${
                     currentTheme === 'dark' 
                       ? 'border-blue-500 bg-blue-50 text-blue-700' 

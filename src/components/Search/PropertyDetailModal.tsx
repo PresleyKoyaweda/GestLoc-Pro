@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, MapPin, Bed, Bath, Square, Calendar, Clock, User, Eye, Home, Wrench, Image, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, MapPin, Bed, Bath, Square, Calendar, Clock, User, Eye, Home, Wrench, Image, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { Property, Unit, VisitSlot, VisitRequest } from '../../types';
 import { useVisitRequests } from '../../hooks/useVisitRequests';
 import { usePropertyRequests } from '../../hooks/usePropertyRequests';
@@ -7,6 +7,7 @@ import { useTenants } from '../../hooks/useTenants';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { usePropertyEquipment } from '../../hooks/usePropertyEquipment';
+import { supabase } from '../../lib/supabase';
 import VisitRequestForm from './VisitRequestForm';
 
 interface PropertyDetailModalProps {
@@ -30,6 +31,32 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   const { equipment } = usePropertyEquipment(property.id);
   const [showVisitRequestForm, setShowVisitRequestForm] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  const [propertyPhotos, setPropertyPhotos] = useState<any[]>([]);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+
+  // Charger les photos de la propriété
+  React.useEffect(() => {
+    const loadPropertyPhotos = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('property_photos')
+          .select('*')
+          .eq('property_id', property.id)
+          .order('is_main', { ascending: false })
+          .order('room_name');
+
+        if (error) throw error;
+        setPropertyPhotos(data || []);
+      } catch (error) {
+        console.error('Error loading property photos:', error);
+      } finally {
+        setLoadingPhotos(false);
+      }
+    };
+
+    loadPropertyPhotos();
+  }, [property.id]);
   const [propertyPhotos, setPropertyPhotos] = useState<any[]>([]);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
@@ -129,6 +156,91 @@ const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
         </div>
 
         <div className="p-6">
+          {/* Property Images Gallery */}
+          <div className="mb-6">
+            {loadingPhotos ? (
+              <div className="h-64 bg-gray-200 rounded-xl flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : propertyPhotos.length > 0 ? (
+              <div className="relative">
+                <div className="h-64 rounded-xl overflow-hidden">
+                  <img
+                    src={propertyPhotos[currentPhotoIndex]?.photo_url}
+                    alt={propertyPhotos[currentPhotoIndex]?.description || 'Photo de la propriété'}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-3 py-1 rounded-lg text-sm">
+                    {propertyPhotos[currentPhotoIndex]?.room_name === 'exterior' ? 'Extérieur' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'living_room' ? 'Salon' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'kitchen' ? 'Cuisine' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'bedroom' ? 'Chambre' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'bathroom' ? 'Salle de bain' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'balcony' ? 'Balcon' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'parking' ? 'Parking' :
+                     propertyPhotos[currentPhotoIndex]?.room_name === 'common_area' ? 'Espace commun' :
+                     propertyPhotos[currentPhotoIndex]?.room_name || 'Photo'}
+                  </div>
+                </div>
+                
+                {propertyPhotos.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setCurrentPhotoIndex(prev => 
+                        prev === 0 ? propertyPhotos.length - 1 : prev - 1
+                      )}
+                      className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-opacity"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setCurrentPhotoIndex(prev => 
+                        prev === propertyPhotos.length - 1 ? 0 : prev + 1
+                      )}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-opacity"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                    
+                    <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm">
+                      {currentPhotoIndex + 1} / {propertyPhotos.length}
+                    </div>
+                  </>
+                )}
+                
+                {/* Thumbnails */}
+                {propertyPhotos.length > 1 && (
+                  <div className="flex space-x-2 mt-4 overflow-x-auto">
+                    {propertyPhotos.map((photo, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setCurrentPhotoIndex(index)}
+                        className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all ${
+                          index === currentPhotoIndex ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <img
+                          src={photo.photo_url}
+                          alt={photo.description}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="h-64 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-6xl mb-2">
+                    {property.type === 'entire' ? '🏠' : '🛏️'}
+                  </div>
+                  <p className="text-gray-500 text-sm">Aucune photo disponible</p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Property Images Gallery */}
           <div className="mb-6">
             {loadingPhotos ? (
