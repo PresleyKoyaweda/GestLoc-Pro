@@ -31,7 +31,8 @@ const VisitRequestsTab: React.FC = () => {
       const { property, unit } = getPropertyInfo(request);
       
       // Créer notification pour le locataire
-      const { error: notificationError } = await supabase
+      try {
+        await supabase
         .from('notifications')
         .insert({
           user_id: request.tenant_id,
@@ -46,9 +47,8 @@ const VisitRequestsTab: React.FC = () => {
             visit_time: request.visit_time
           }
         });
-
-      if (notificationError) {
-        console.error('Error creating notification:', notificationError);
+      } catch (notificationError) {
+        console.warn('Notification non envoyée:', notificationError);
       }
 
       alert('✅ Visite confirmée ! Un message de confirmation a été envoyé au locataire.');
@@ -67,7 +67,8 @@ const VisitRequestsTab: React.FC = () => {
       await cancelVisit(request.id);
 
       // Créer notification pour le locataire
-      const { error: notificationError } = await supabase
+      try {
+        await supabase
         .from('notifications')
         .insert({
           user_id: request.tenant_id,
@@ -80,9 +81,8 @@ const VisitRequestsTab: React.FC = () => {
             unit_id: request.unit_id
           }
         });
-
-      if (notificationError) {
-        console.error('Error creating notification:', notificationError);
+      } catch (notificationError) {
+        console.warn('Notification non envoyée:', notificationError);
       }
 
       alert('Visite annulée. Le locataire a été notifié.');

@@ -62,7 +62,8 @@ const PropertyRequestsTab: React.FC = () => {
       }
 
       // Send notification via Supabase function
-      const { error: notificationError } = await supabase
+      try {
+        await supabase
         .from('notifications')
         .insert({
           user_id: request.tenant_id,
@@ -75,9 +76,8 @@ const PropertyRequestsTab: React.FC = () => {
             unit_id: unit?.id
           }
         });
-
-      if (notificationError) {
-        console.error('Error creating notification:', notificationError);
+      } catch (notificationError) {
+        console.warn('Notification non envoyée:', notificationError);
       }
 
       alert('🎉 Demande acceptée ! Un message de bienvenue a été envoyé au locataire.');
@@ -107,7 +107,8 @@ const PropertyRequestsTab: React.FC = () => {
       }
 
       // Créer notification pour le locataire
-      const { error: notificationError } = await supabase
+      try {
+        await supabase
         .from('notifications')
         .insert({
           user_id: request.tenant_id,
@@ -120,9 +121,8 @@ const PropertyRequestsTab: React.FC = () => {
             unit_id: unit?.id
           }
         });
-
-      if (notificationError) {
-        console.error('Error creating notification:', notificationError);
+      } catch (notificationError) {
+        console.warn('Notification non envoyée:', notificationError);
       }
 
       alert('📋 Demande refusée. Un message a été envoyé au locataire.');

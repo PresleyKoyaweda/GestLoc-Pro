@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Calendar, Clock, User, Mail, Phone, MessageSquare } from 'lucide-react';
+import { X, Calendar, Clock, User, Mail, Phone, MessageSquare, AlertTriangle } from 'lucide-react';
 import { useVisitRequests } from '../../hooks/useVisitRequests';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -71,15 +71,11 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
     
     try {
       if (!formData.selectedDate || !formData.selectedTime) {
-        alert('Veuillez sélectionner une date et une heure pour la visite.');
-        setLoading(false);
-        return;
+        throw new Error('Veuillez sélectionner une date et une heure pour la visite.');
       }
 
       if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
-        alert('Veuillez remplir tous les champs obligatoires.');
-        setLoading(false);
-        return;
+        throw new Error('Veuillez remplir tous les champs obligatoires.');
       }
 
       const slotId = `${formData.selectedDate}-${formData.selectedTime}`;
@@ -106,7 +102,8 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
       await addVisitRequest(visitRequestData);
 
       // Créer notification pour le propriétaire
-      const { error: notificationError } = await supabase
+      try {
+        await supabase
         .from('notifications')
         .insert({
           user_id: property.owner_id,
@@ -122,17 +119,16 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
             tenant_id: user?.id
           }
         });
-
-      if (notificationError) {
-        console.error('Error creating notification:', notificationError);
-        // Ne pas faire échouer la demande pour une erreur de notification
+      } catch (notificationError) {
+        console.warn('Notification non envoyée:', notificationError);
+        // Ne pas faire échouer la demande principale
       }
 
       alert('✅ Votre demande de visite a été envoyée au propriétaire !');
       onClose();
     } catch (error) {
       console.error('Error submitting visit request:', error);
-      alert('Erreur lors de l\'envoi de la demande de visite');
+      alert(error instanceof Error ? error.message : 'Erreur lors de l\'envoi de la demande de visite');
     } finally {
       setLoading(false);
     }

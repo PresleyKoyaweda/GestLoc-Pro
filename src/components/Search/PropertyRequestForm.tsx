@@ -38,8 +38,7 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
     
     try {
       if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
-        alert('Veuillez remplir tous les champs obligatoires.');
-        return;
+        throw new Error('Veuillez remplir tous les champs obligatoires.');
       }
       
       // Find the visit request that enabled this property request
@@ -78,7 +77,8 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
       }
 
       // Créer notification pour le propriétaire
-      const { error: notificationError } = await supabase
+      try {
+        await supabase
         .from('notifications')
         .insert({
           user_id: property.owner_id,
@@ -92,17 +92,16 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
             tenant_id: user?.id
           }
         });
-
-      if (notificationError) {
-        console.error('Error creating notification:', notificationError);
-        // Ne pas faire échouer la demande pour une erreur de notification
+      } catch (notificationError) {
+        console.warn('Notification non envoyée:', notificationError);
+        // Ne pas faire échouer la demande principale
       }
 
       alert('✅ Votre demande a été envoyée avec succès au propriétaire ! Vous recevrez une notification de sa réponse.');
       onClose();
     } catch (error) {
       console.error('Error submitting request:', error);
-      alert('Erreur lors de l\'envoi de la demande');
+      alert(error instanceof Error ? error.message : 'Erreur lors de l\'envoi de la demande');
     } finally {
       setLoading(false);
     }

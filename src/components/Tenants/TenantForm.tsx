@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User, Mail, Phone, Calendar, DollarSign } from 'lucide-react';
+import { X, User, Mail, Phone, Calendar, DollarSign, AlertTriangle } from 'lucide-react';
 import { useTenants } from '../../hooks/useTenants';
 import { useProperties } from '../../hooks/useProperties';
 import { useUnits } from '../../hooks/useUnits';
@@ -25,7 +25,6 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
     unit_id: tenant?.unit_id || '',
     lease_start: tenant?.lease_start ? new Date(tenant.lease_start).toISOString().split('T')[0] : '',
     lease_end: tenant?.lease_end ? new Date(tenant.lease_end).toISOString().split('T')[0] : '',
-    monthly_rent: tenant?.monthly_rent || 0,
     payment_due_date: tenant?.payment_due_date || 1,
     emergency_contact: {
       name: tenant?.emergency_contact?.name || '',
@@ -64,9 +63,7 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
       }
       
       if (!tenant && !canAddTenant(0)) { // We'll get the actual count from the hook
-        alert('Vous avez atteint la limite de locataires pour votre plan. Veuillez mettre à niveau votre abonnement.');
-        setLoading(false);
-        return;
+        throw new Error('Vous avez atteint la limite de locataires pour votre plan. Veuillez mettre à niveau votre abonnement.');
       }
       
       // Créer d'abord un profil utilisateur pour le locataire si nécessaire
@@ -100,7 +97,6 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
         lease_start: formData.lease_start,
         lease_end: formData.lease_end,
         monthly_rent: formData.monthly_rent,
-        deposit_paid: 0, // Supprimé - interdit au Canada
         payment_due_date: formData.payment_due_date,
         emergency_contact: formData.emergency_contact,
         status: 'active'
@@ -115,7 +111,7 @@ const TenantForm: React.FC<TenantFormProps> = ({ onClose, tenant }) => {
       onClose();
     } catch (error) {
       console.error('Error saving tenant:', error);
-      alert('Erreur lors de la sauvegarde du locataire');
+      alert(error instanceof Error ? error.message : 'Erreur lors de la sauvegarde du locataire');
     } finally {
       setLoading(false);
     }
