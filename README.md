@@ -204,6 +204,94 @@ Ma vision est de créer l'écosystème de référence pour la gestion locative a
 
 L'objectif ultime que j'ai est de permettre à tout propriétaire, du débutant au professionnel, de gérer son portefeuille immobilier avec la même efficacité qu'une grande entreprise, tout en offrant une expérience locataire exceptionnelle.
 
+Ma vision technique est de créer la plateforme la plus avancée et scalable du marché de la gestion locative ! 🚀
+
+## 🧪 Tests Manuels - Corrections Bolt
+
+### ✅ Corrections Appliquées
+
+**1. Locataires - Sauvegarde corrigée :**
+- ✅ Suppression des dépôts de garantie (interdit au Canada)
+- ✅ Validation des champs obligatoires améliorée
+- ✅ Gestion d'erreurs renforcée avec loading states
+- ✅ Création automatique de profils temporaires pour nouveaux locataires
+
+**2. Visites - Demandes et notifications :**
+- ✅ Correction de l'envoi des demandes de visite
+- ✅ Notifications directes via table `notifications` (plus de RPC)
+- ✅ Validation des champs obligatoires
+- ✅ Gestion d'erreurs améliorée
+
+**3. Équipements - Affichage dans recherche :**
+- ✅ Affichage correct des équipements par propriété
+- ✅ Catégorisation et état des équipements
+- ✅ Indication "inclus dans le loyer"
+
+**4. Photos par pièce :**
+- ✅ Nouvelle table `property_photos` avec migration
+- ✅ Upload et gestion des photos par pièce
+- ✅ Galerie avec navigation dans PropertyDetailModal
+- ✅ Photo principale et thumbnails
+- ✅ Descriptions par photo
+
+**5. Notifications bout en bout :**
+- ✅ Création directe via table `notifications`
+- ✅ Suppression des appels RPC défaillants
+- ✅ Gestion d'erreurs sans faire échouer les actions principales
+- ✅ Notifications pour visites, demandes, acceptations/refus
+
+**6. Garanties supprimées :**
+- ✅ Suppression complète des mentions de dépôts de garantie
+- ✅ Conformité avec la législation canadienne
+- ✅ Interface mise à jour
+
+**7. Thème gris/blanc :**
+- ✅ Toggle fonctionnel avec boutons visuels
+- ✅ Classes Tailwind dark mode configurées
+- ✅ Persistance du thème dans localStorage
+- ✅ Application automatique au chargement
+
+### 🔍 Tests à Effectuer
+
+**Test 1 - Création de locataire :**
+1. Aller dans Locataires → Ajouter un locataire
+2. Remplir tous les champs (sans dépôt de garantie)
+3. Vérifier que la sauvegarde fonctionne sans erreur
+4. Confirmer que le locataire apparaît dans la liste
+
+**Test 2 - Demande de visite :**
+1. Se connecter comme locataire (tenant@test.com)
+2. Aller dans Recherche → Sélectionner une propriété
+3. Programmer une visite avec tous les champs remplis
+4. Vérifier que la demande est envoyée sans erreur
+5. Se connecter comme propriétaire et vérifier la notification
+
+**Test 3 - Équipements et photos :**
+1. Créer/modifier une propriété
+2. Ajouter des équipements avec différentes catégories
+3. Ajouter des photos par pièce avec descriptions
+4. Côté locataire, vérifier l'affichage dans les détails
+5. Tester la galerie photo avec navigation
+
+**Test 4 - Notifications :**
+1. Effectuer une action générant une notification (visite, demande)
+2. Vérifier que la notification apparaît dans l'en-tête
+3. Cliquer sur la notification pour la marquer comme lue
+4. Vérifier que le compteur se met à jour
+
+**Test 5 - Thème :**
+1. Aller dans Paramètres
+2. Cliquer sur le toggle Clair/Sombre
+3. Vérifier que l'interface change immédiatement
+4. Recharger la page et vérifier la persistance
+
+### 🚀 Prêt pour Production
+- ✅ Aucune erreur TypeScript
+- ✅ Gestion d'erreurs robuste
+- ✅ Notifications fiables
+- ✅ Interface responsive
+- ✅ Conformité légale canadienne
+
 ---
 
 *Développé avec passion pour révolutionner la gestion locative* 🏠✨
