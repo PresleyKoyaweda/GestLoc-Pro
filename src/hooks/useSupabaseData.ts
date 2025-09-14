@@ -61,7 +61,7 @@ export function useSupabaseData<T>(
 
   const insert = async (newItem: Partial<T>) => {
     try {
-      console.log(`📝 Inserting into ${table}:`, newItem);
+      console.log(`📝 Inserting into ${table}:`, JSON.stringify(newItem, null, 2));
       
       const { data: result, error } = await supabase
         .from(table)
@@ -69,13 +69,16 @@ export function useSupabaseData<T>(
         .select()
         .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error(`❌ Erreur Supabase insert ${table}:`, error);
+        throw error;
+      }
       
-      console.log(`✅ Successfully inserted into ${table}:`, result);
+      console.log(`✅ Successfully inserted into ${table}:`, JSON.stringify(result, null, 2));
       setData(prev => [...prev, result]);
       return result;
     } catch (err) {
-      console.error(`Error inserting into ${table}:`, err);
+      console.error(`❌ Error inserting into ${table}:`, err);
       throw err;
     }
   };

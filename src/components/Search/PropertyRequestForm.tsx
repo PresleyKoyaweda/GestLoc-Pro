@@ -51,17 +51,16 @@ const PropertyRequestForm: React.FC<PropertyRequestFormProps> = ({ property, uni
       
       const requestData = {
         property_id: property.id,
-        unit_id: unit?.id,
-        tenant_id: user?.id || '',
+        unit_id: unit?.id || null,
+        tenant_id: user?.id,
         status: 'en_attente',
-        request_date: new Date().toISOString(),
         tenant_info: {
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
           phone: formData.phone,
           message: formData.message,
-          idDocument: formData.idDocument ? URL.createObjectURL(formData.idDocument) : undefined,
+          idDocument: formData.idDocument ? URL.createObjectURL(formData.idDocument) : null,
           communicationPreference: formData.communicationPreference,
         },
       };

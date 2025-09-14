@@ -70,6 +70,14 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
     setLoading(true);
     
     try {
+      console.log('🔄 Envoi demande de visite - Données:', {
+        property: property.name,
+        unit: unit?.name,
+        date: formData.selectedDate,
+        time: formData.selectedTime,
+        user: user?.id
+      });
+
       if (!formData.selectedDate || !formData.selectedTime) {
         throw new Error('Veuillez sélectionner une date et une heure pour la visite.');
       }
@@ -78,12 +86,16 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
         throw new Error('Veuillez remplir tous les champs obligatoires.');
       }
 
+      if (!user?.id) {
+        throw new Error('Utilisateur non authentifié.');
+      }
+
       const slotId = `${formData.selectedDate}-${formData.selectedTime}`;
       
       const visitRequestData = {
         property_id: property.id,
-        unit_id: unit?.id,
-        tenant_id: user?.id || '',
+        unit_id: unit?.id || null,
+        tenant_id: user.id,
         slot_id: slotId,
         status: 'pending',
         tenant_info: {
@@ -96,16 +108,19 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
         },
         visit_date: formData.selectedDate,
         visit_time: formData.selectedTime,
-        request_date: new Date().toISOString(),
       };
 
+      console.log('📝 Données à envoyer:', visitRequestData);
+
       await addVisitRequest(visitRequestData);
+      
+      console.log('✅ Demande de visite créée avec succès');
 
       // Créer notification pour le propriétaire
       try {
-        await supabase
-        .from('notifications')
-        .insert({
+        console.log('📬 Création notification pour propriétaire:', property.owner_id);
+        
+        const notificationData = {
           user_id: property.owner_id,
           type: 'general',
           title: 'Nouvelle demande de visite',
@@ -116,18 +131,26 @@ const VisitRequestForm: React.FC<VisitRequestFormProps> = ({ property, unit, onC
             unit_id: unit?.id,
             visit_date: formData.selectedDate,
             visit_time: formData.selectedTime,
-            tenant_id: user?.id
+            tenant_id: user.id
           }
-        });
+        };
+        
+        console.log('📬 Données notification:', notificationData);
+        
+        await supabase
+          .from('notifications')
+          .insert(notificationData);
+          
+        console.log('✅ Notification créée avec succès');
       } catch (notificationError) {
-        console.warn('Notification non envoyée:', notificationError);
+        console.warn('⚠️ Notification non envoyée:', notificationError);
         // Ne pas faire échouer la demande principale
       }
 
       alert('✅ Votre demande de visite a été envoyée au propriétaire !');
       onClose();
     } catch (error) {
-      console.error('Error submitting visit request:', error);
+      console.error('❌ Erreur envoi demande de visite:', error);
       alert(error instanceof Error ? error.message : 'Erreur lors de l\'envoi de la demande de visite');
     } finally {
       setLoading(false);
